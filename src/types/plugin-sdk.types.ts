@@ -227,6 +227,12 @@ export interface PluginHost {
   /** Change the instrument plugin on a track. Preserves MIDI data. */
   setTrackInstrument(trackId: string, pluginId: string): Promise<void>;
 
+  /** Open the instrument plugin's native editor GUI as a floating window. */
+  showInstrumentEditor(trackId: string): Promise<void>;
+
+  /** Close the instrument plugin's editor window. */
+  hideInstrumentEditor(trackId: string): Promise<void>;
+
   // --- Scene Context (read-only) ---
 
   /** Get the FULL generation context for the active scene. */

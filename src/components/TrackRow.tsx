@@ -98,6 +98,13 @@ export interface SDKTrackRowProps {
   instrumentsLoading?: boolean;
   /** Re-scan for instruments */
   onRefreshInstruments?: () => void;
+  // --- Instrument Editor (Stage 2) ---
+  /** Which stage the instrument drawer is in */
+  instrumentDrawerStage?: 'instruments' | 'editor';
+  /** Called when user clicks "Open Editor" */
+  onShowEditor?: () => void;
+  /** Called when user wants to go back from editor view */
+  onBackToInstruments?: () => void;
 }
 
 // ============================================================================
@@ -141,6 +148,9 @@ export function TrackRow({
   onInstrumentSelect,
   instrumentsLoading,
   onRefreshInstruments,
+  instrumentDrawerStage,
+  onShowEditor,
+  onBackToInstruments,
 }: SDKTrackRowProps): React.ReactElement {
   const { muted: isMuted, solo: isSoloed, volume: currentVolume, pan: currentPan } = runtimeState;
 
@@ -317,13 +327,19 @@ export function TrackRow({
               <button
                 data-testid="sdk-shuffle-button"
                 onClick={onShuffle}
-                disabled={!hasMidi || isGenerating}
+                disabled={!hasMidi || isGenerating || !!currentInstrumentPluginId}
                 className={`w-14 py-0.5 rounded-sm text-xs font-medium transition-colors border ${
-                  !hasMidi || isGenerating
+                  !hasMidi || isGenerating || !!currentInstrumentPluginId
                     ? 'bg-sas-panel border-sas-border text-sas-muted/30 cursor-not-allowed'
                     : 'bg-sas-panel-alt border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent'
                 }`}
-                title={hasMidi ? 'Re-roll sound (keep MIDI)' : 'Generate MIDI first'}
+                title={
+                  currentInstrumentPluginId
+                    ? 'Shuffle only works with default Surge XT'
+                    : hasMidi
+                      ? 'Re-roll sound (keep MIDI)'
+                      : 'Generate MIDI first'
+                }
               >
                 Shuffle
               </button>
@@ -408,6 +424,10 @@ export function TrackRow({
             isLoading={instrumentsLoading ?? false}
             onSelect={onInstrumentSelect}
             onRefresh={onRefreshInstruments}
+            stage={instrumentDrawerStage}
+            onShowEditor={onShowEditor}
+            onBackToInstruments={onBackToInstruments}
+            selectedInstrumentName={instrumentName}
           />
         </div>
       )}

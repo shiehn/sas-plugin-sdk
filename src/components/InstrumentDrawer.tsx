@@ -1,8 +1,8 @@
 /**
- * InstrumentDrawer — Sliding drawer for selecting instrument plugins (VST3/AU).
+ * InstrumentDrawer — Two-stage nested menu for instrument selection + editor access.
  *
- * Appears below the track controls when the "P" button is toggled.
- * Shows a searchable grid of available instrument plugins.
+ * Stage 1 (instruments): Searchable grid of available VST3/AU instrument plugins.
+ * Stage 2 (editor): Shows "Open Editor" button for the selected plugin's native GUI.
  */
 
 import React, { useState, useMemo } from 'react';
@@ -23,6 +23,15 @@ export interface InstrumentDrawerProps {
   onSelect: (pluginId: string) => void;
   /** Called when user clicks refresh to re-scan plugins */
   onRefresh: () => void;
+  // --- Editor access (Stage 2) ---
+  /** Which stage the drawer is in */
+  stage?: 'instruments' | 'editor';
+  /** Called when user clicks "Open Editor" */
+  onShowEditor?: () => void;
+  /** Called when user wants to go back from editor view to instrument list */
+  onBackToInstruments?: () => void;
+  /** Name of the selected instrument (for display in editor header) */
+  selectedInstrumentName?: string | null;
 }
 
 // ============================================================================
@@ -35,25 +44,39 @@ export function InstrumentDrawer({
   isLoading,
   onSelect,
   onRefresh,
+  stage = 'instruments',
+  onShowEditor,
+  onBackToInstruments,
+  selectedInstrumentName,
 }: InstrumentDrawerProps): React.ReactElement {
   const [search, setSearch] = useState('');
 
   /** Sentinel pluginId for the default Surge XT entry */
   const SURGE_XT_DEFAULT_ID = 'Surge XT';
 
-  // Filter instruments by search query (name or manufacturer)
+  // Filter instruments by search query, with selected instrument always first
   const filtered = useMemo((): InstrumentDescriptor[] => {
-    const all = instruments.filter(
+    let all = instruments.filter(
       (i: InstrumentDescriptor) => i.name !== 'Surge XT'
     );
-    if (!search.trim()) return all;
-    const q = search.toLowerCase();
-    return all.filter(
-      (i: InstrumentDescriptor) =>
-        i.name.toLowerCase().includes(q) ||
-        i.manufacturer.toLowerCase().includes(q)
-    );
-  }, [instruments, search]);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      all = all.filter(
+        (i: InstrumentDescriptor) =>
+          i.name.toLowerCase().includes(q) ||
+          i.manufacturer.toLowerCase().includes(q)
+      );
+    }
+    // Move the currently selected instrument to the top
+    if (currentPluginId) {
+      const selectedIdx = all.findIndex((i: InstrumentDescriptor) => i.pluginId === currentPluginId);
+      if (selectedIdx > 0) {
+        const [selected] = all.splice(selectedIdx, 1);
+        all.unshift(selected);
+      }
+    }
+    return all;
+  }, [instruments, search, currentPluginId]);
 
   // Is the default Surge XT selected?
   const isDefaultSelected = currentPluginId === null;
@@ -63,6 +86,35 @@ export function InstrumentDrawer({
     return pluginId === currentPluginId;
   };
 
+  // ---- Stage 2: Editor Access ----
+  if (stage === 'editor') {
+    return (
+      <div className="flex flex-col gap-2">
+        {/* Back button + instrument name header */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onBackToInstruments?.()}
+            className="px-2 py-1 text-xs rounded-sm border border-sas-border text-sas-muted hover:text-sas-accent hover:border-sas-accent transition-colors"
+          >
+            &larr; Back
+          </button>
+          <span className="text-xs text-sas-muted font-medium truncate flex-1">
+            {selectedInstrumentName ?? 'Plugin'}
+          </span>
+        </div>
+
+        {/* Open Editor button */}
+        <button
+          onClick={() => onShowEditor?.()}
+          className="w-full py-2 text-xs font-medium rounded-sm border border-sas-accent bg-sas-accent/20 text-sas-accent hover:bg-sas-accent/40 transition-colors"
+        >
+          Open Plugin Editor
+        </button>
+      </div>
+    );
+  }
+
+  // ---- Stage 1: Instrument List (default) ----
   return (
     <div className="flex flex-col gap-2">
       {/* Search + Refresh row */}
@@ -103,7 +155,7 @@ export function InstrumentDrawer({
             title="Surge XT — Default instrument"
           >
             <span className="text-xs font-medium truncate w-full">
-              {isDefaultSelected && '✓ '}Surge XT
+              {isDefaultSelected && '\u2713 '}Surge XT
             </span>
             <span className="text-[9px] text-sas-muted/50 truncate w-full">
               Default
@@ -126,7 +178,7 @@ export function InstrumentDrawer({
                 title={`${inst.name} by ${inst.manufacturer} (${inst.type.toUpperCase()})${inst.missing ? ' — MISSING' : ''}`}
               >
                 <span className="text-xs font-medium truncate w-full">
-                  {selected && '✓ '}{inst.name}
+                  {selected && '\u2713 '}{inst.name}
                 </span>
                 <span className="text-[9px] text-sas-muted/50 truncate w-full">
                   {inst.manufacturer || inst.type.toUpperCase()}
