@@ -417,6 +417,35 @@ export interface PluginHost {
 
   /** Start a timer. Returns a stop function that logs the duration. */
   startTimer(name: string): () => void;
+
+  // --- Stem Splitting ---
+
+  /** Split an audio track into stems (vocals, drums, bass, other). Creates new muted tracks. */
+  splitStems(trackId: string): Promise<PluginStemSplitResult>;
+
+  /** Check if the stem splitter binary is available. */
+  isStemSplitterAvailable(): Promise<boolean>;
+}
+
+// ============================================================================
+// Stem Splitting Types
+// ============================================================================
+
+/** Stem type identifiers */
+export type StemType = 'vocals' | 'drums' | 'bass' | 'other';
+
+/** Result of splitting an audio track into stems */
+export interface PluginStemSplitResult {
+  /** Created stem tracks with audio loaded (all auto-muted) */
+  stems: PluginStemTrackInfo[];
+}
+
+/** Information about a single stem track created by stem splitting */
+export interface PluginStemTrackInfo {
+  /** The stem type (vocals, drums, bass, other) */
+  stemType: StemType;
+  /** Track handle for the new stem track */
+  track: PluginTrackHandle;
 }
 
 // ============================================================================

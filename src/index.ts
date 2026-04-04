@@ -71,6 +71,9 @@ export type {
   SavePluginPresetOptions,
   PluginStatus,
   PluginRegistration,
+  StemType,
+  PluginStemSplitResult,
+  PluginStemTrackInfo,
 } from './types/plugin-sdk.types';
 
 export { PluginError } from './types/plugin-sdk.types';
