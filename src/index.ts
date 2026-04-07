@@ -27,6 +27,8 @@ export type {
   MidiClipData,
   PluginMidiNote,
   MidiWriteResult,
+  ExportMidiBundleOptions,
+  ExportMidiBundleResult,
   PostProcessOptions,
   MusicalContext,
   PluginChordTiming,

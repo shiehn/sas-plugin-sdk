@@ -186,6 +186,20 @@ export interface PluginHost {
   clearMidi(trackId: string): Promise<void>;
 
   /**
+   * Export all tracks owned by this plugin in the active scene as a ZIP bundle
+   * of Standard MIDI Files (one .mid per track, named after each track with
+   * collision-avoidance suffixes). Prompts the user for a save location.
+   *
+   * Tracks with no MIDI data are skipped. Returns the path written, or
+   * `{ canceled: true }` if the user dismissed the save dialog.
+   *
+   * @since SDK 1.1.0
+   */
+  exportTracksAsMidiBundle(
+    options?: ExportMidiBundleOptions
+  ): Promise<ExportMidiBundleResult>;
+
+  /**
    * Run the host's MIDI post-processing pipeline on raw notes.
    * Wraps MidiProcessor: quantize -> swing -> scale -> register -> overlaps -> humanize.
    */
@@ -588,6 +602,24 @@ export interface MidiWriteResult {
   /** Actual bars covered */
   bars: number;
 }
+
+/**
+ * Options for {@link PluginHost.exportTracksAsMidiBundle}.
+ * @since SDK 1.1.0
+ */
+export interface ExportMidiBundleOptions {
+  /** Default ZIP filename suggested in the save dialog (without extension). */
+  defaultName?: string;
+}
+
+/**
+ * Result of {@link PluginHost.exportTracksAsMidiBundle}.
+ * @since SDK 1.1.0
+ */
+export type ExportMidiBundleResult =
+  | { success: true; filePath: string; trackCount: number; skippedCount: number }
+  | { success: false; canceled: true }
+  | { success: false; canceled?: false; error: string };
 
 export interface PostProcessOptions {
   /** Snap notes to grid (default: true) */
