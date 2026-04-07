@@ -1,6 +1,6 @@
 {
   "name": "@signalsandsorcery/plugin-sdk",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Plugin SDK for Signals & Sorcery — types, components, and hooks for building generator plugins",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
