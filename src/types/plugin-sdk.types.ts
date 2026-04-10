@@ -392,6 +392,23 @@ export interface PluginHost {
   /** Time-stretch a sample to a target BPM. Returns the new sample info. */
   timeStretchSample(sampleId: string, targetBpm: number): Promise<PluginSampleInfo>;
 
+  /**
+   * Lightweight one-shot sample audition through the cue (headphone) output.
+   *
+   * Plays the file via a dedicated SimpleLoopPlayer instance in the audio
+   * engine — no Tracktion track or clip is created, no BPM matching, no
+   * sync. Calling previewSample again with a different file replaces the
+   * current preview cleanly. Independent of loop-b: starting/stopping a
+   * preview never affects the performance deck and vice versa.
+   */
+  previewSample(filePath: string): Promise<void>;
+
+  /**
+   * Stop any in-flight sample preview started by previewSample(). Safe to
+   * call when no preview is active — never throws.
+   */
+  stopPreview(): Promise<void>;
+
   // --- Audio Generation (Phase 2) ---
 
   /** Invoke the host's audio texture generation pipeline. */
