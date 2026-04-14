@@ -52,6 +52,11 @@ export type {
   PluginSettingsSchema,
   SettingDefinition,
   PluginSettingsStore,
+  // AI skill surface — lets plugins declare LLM-callable actions
+  // registered as namespaced tools (plugin:<id>:<skill>). Required for
+  // plugins that expose a `chat` or similar agent-delegation skill.
+  PluginSkill,
+  PluginSkillInputSchema,
   PluginErrorCode,
   PluginManifest,
   PluginCapabilities,

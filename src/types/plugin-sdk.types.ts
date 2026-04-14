@@ -82,6 +82,40 @@ export interface GeneratorPlugin {
    * (chords updated, tracks added/removed, BPM changed).
    */
   onContextChanged?(context: MusicalContext): void;
+
+  /**
+   * Optional: Declare LLM-callable skills this plugin provides.
+   * Skills are registered as namespaced tools (plugin:<pluginId>:<skillId>)
+   * and become available to AI agents for orchestration.
+   *
+   * Example: the chat-panel plugin declares a `chat` skill so external
+   * agents (Claude Code, OpenClaw) can delegate scene-scoped natural
+   * language work to the in-app agent via a single call.
+   */
+  getSkills?(): PluginSkill[];
+}
+
+// ============================================================================
+// Plugin Skills (AI Harness)
+// ============================================================================
+
+/** An LLM-callable action declared by a plugin. */
+export interface PluginSkill {
+  /** Unique skill id within this plugin (e.g., 'chat', 'generate_bassline') */
+  id: string;
+  /** Human-readable description — drives LLM tool selection */
+  description: string;
+  /** JSON Schema for the skill's input parameters */
+  inputSchema: PluginSkillInputSchema;
+  /** Whether this skill only reads state (no mutations). Default: false */
+  isReadOnly?: boolean;
+}
+
+/** JSON Schema shape for skill input parameters. */
+export interface PluginSkillInputSchema {
+  type: 'object';
+  properties?: Record<string, unknown>;
+  required?: string[];
 }
 
 // ============================================================================
