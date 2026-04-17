@@ -244,6 +244,33 @@ export interface PluginHost {
   /** Place an audio file on a track this plugin owns. */
   writeAudioClip(trackId: string, filePath: string, position?: number): Promise<void>;
 
+  /**
+   * Render a single track to a temporary WAV file and return its path.
+   * Only works on owned tracks. For MIDI/synth tracks the host mutes siblings
+   * and renders the scene. For single-clip audio tracks the host MAY take a
+   * copy-source fast path.
+   * @since SDK 1.2.0
+   */
+  exportTrackAudio?(trackId: string): Promise<ExportTrackAudioResult>;
+
+  /**
+   * Run a chain of audio operations on an input WAV via the bundled
+   * sas-audio-processor binary. Unsupported ops throw NOT_IMPLEMENTED.
+   * @since SDK 1.2.0
+   */
+  processAudio?(
+    inputPath: string,
+    operations: AudioProcessingOp[]
+  ): Promise<ProcessAudioResult>;
+
+  /**
+   * Replace a track's audio content. For audio tracks, clears clips and
+   * adds the new audio. For MIDI/synth tracks, the original row is stashed
+   * in plugin_data and a new audio_tracks row is inserted (MIDI is lost).
+   * @since SDK 1.2.0
+   */
+  replaceTrackAudio?(trackId: string, audioPath: string): Promise<void>;
+
   // --- Plugin/Synth Operations ---
 
   /** Load a VST3/AU plugin onto a track this plugin owns. */
@@ -316,6 +343,36 @@ export interface PluginHost {
 
   /** Check if LLM access is available (user authenticated + gateway reachable). */
   isLLMAvailable(): Promise<boolean>;
+
+  // --- App Tool Bridge ---
+
+  /**
+   * List the host's registered app tools. Used by plugins (e.g. the chat
+   * panel) that want to expose the same surface external AI agents have.
+   *
+   * `opts.scope` filters by scope tag — scene-scoped consumers pass
+   * `'scene'` to hide project-level tools they shouldn't call. When omitted,
+   * every tool regardless of scope is returned.
+   *
+   * @since SDK 1.2.0
+   */
+  listAppTools(opts?: { scope?: 'scene' | 'project' }): Promise<PluginAppTool[]>;
+
+  /**
+   * Execute a host app tool by name. Delegates to the in-process
+   * ToolRegistry — every mutation broadcasts to the UI automatically.
+   *
+   * For scene-scoped tools tagged with `autoBindSceneId`, the host
+   * overrides the caller's `sceneId` param with the currently-active
+   * scene. That keeps a scene-bound caller from accidentally targeting
+   * another scene.
+   *
+   * @since SDK 1.2.0
+   */
+  executeAppTool(
+    name: string,
+    params: Record<string, unknown>
+  ): Promise<PluginAppToolResult>;
 
   // --- Preset System ---
 
@@ -671,6 +728,36 @@ export type ExportMidiBundleResult =
   | { success: true; filePath: string; trackCount: number; skippedCount: number }
   | { success: false; canceled: true }
   | { success: false; canceled?: false; error: string };
+
+// ============================================================================
+// Audio Processing Bridge (SDK 1.2.0 — see ai-orchestration-design.md §16)
+// ============================================================================
+
+/** @since SDK 1.2.0 */
+export interface ExportTrackAudioResult {
+  path: string;
+  bpm: number;
+  durationMs: number;
+  fromCopyFastPath?: boolean;
+}
+
+/** @since SDK 1.2.0 */
+export interface ProcessAudioResult {
+  outputPath: string;
+}
+
+/** @since SDK 1.2.0 */
+export type AudioProcessingOp =
+  | { tool: 'normalize' }
+  | { tool: 'compress'; params?: { threshold?: number; ratio?: number } }
+  | { tool: 'eq'; params?: { low_gain?: number; mid_gain?: number; high_gain?: number } }
+  | { tool: 'reverb'; params?: { room_size?: number; dry_wet?: number } }
+  | { tool: 'pitch-shift'; params: { semitones: number } }
+  | { tool: 'time-stretch'; params: { target_bpm: number } }
+  | { tool: 'filter'; params: { type: 'lowpass' | 'highpass'; cutoff: number } }
+  | { tool: 'gain'; params: { db: number } }
+  | { tool: 'limit' }
+  | { tool: 'trim'; params?: { start?: number; end?: number } };
 
 export interface PostProcessOptions {
   /** Snap notes to grid (default: true) */
@@ -1106,6 +1193,39 @@ export interface SavePluginPresetOptions {
   name: string;
   category?: string;
   data: Record<string, unknown>;
+}
+
+// ============================================================================
+// App Tool Bridge (since SDK 1.2.0)
+// ============================================================================
+
+/** JSON Schema shape for a tool's input params. */
+export interface PluginAppToolInputSchema {
+  type: 'object';
+  properties?: Record<string, unknown>;
+  required?: string[];
+}
+
+/** Lightweight descriptor returned by `PluginHost.listAppTools`. */
+export interface PluginAppTool {
+  name: string;
+  description: string;
+  inputSchema: PluginAppToolInputSchema;
+  /** `'scene'` = safe for scene-scoped callers. `'project'` = cross-scene. */
+  scope?: 'scene' | 'project';
+}
+
+/** Result shape returned by `PluginHost.executeAppTool`. */
+export interface PluginAppToolResult {
+  success: boolean;
+  action: string;
+  message?: string;
+  error?: string;
+  /**
+   * Tool-specific payload. Concrete shape depends on the tool — callers
+   * should treat this as opaque unless they know the tool.
+   */
+  data?: unknown;
 }
 
 // ============================================================================
