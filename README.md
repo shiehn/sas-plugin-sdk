@@ -2,6 +2,12 @@
 
 Plugin SDK for building custom generator plugins for [Signals & Sorcery](https://signalsandsorcery.com) — an AI-powered music production workstation.
 
+<p align="center">
+  <img src="assets/signals-and-sorcery.png" alt="Signals & Sorcery" width="420" />
+</p>
+
+> Part of the **[Signals & Sorcery](https://signalsandsorcery.com)** ecosystem.
+
 Plugins extend the Loop Workstation with custom input generators that create MIDI patterns, manage audio samples, generate AI audio textures, or combine all three. Each plugin gets its own accordion section in the workstation UI and a scoped `PluginHost` API for interacting with tracks, MIDI, audio, and more.
 
 ## Installation
@@ -362,6 +368,18 @@ All errors are `PluginError` instances with a typed `code` property:
 - **Capability gating** — Network and file system access require manifest declarations
 - **Secret isolation** — Each plugin's secrets are encrypted and scoped per plugin
 - **Track limits** — 16 tracks per plugin per scene (configurable)
+
+## The Signals & Sorcery Ecosystem
+
+- **[Signals & Sorcery](https://signalsandsorcery.com)** — the flagship AI music production workstation
+- **[sas-synth-plugin](https://github.com/shiehn/sas-synth-plugin)** — AI MIDI generation with Surge XT
+- **[sas-sample-plugin](https://github.com/shiehn/sas-sample-plugin)** — Sample library browser with time-stretching
+- **[sas-audio-plugin](https://github.com/shiehn/sas-audio-plugin)** — AI audio texture generation
+- **[DeclarAgent](https://github.com/shiehn/DeclarAgent)** — Declarative agent + MCP transport for S&S
+
+<p align="center">
+  <a href="https://signalsandsorcery.com">signalsandsorcery.com</a>
+</p>
 
 ## License
 
