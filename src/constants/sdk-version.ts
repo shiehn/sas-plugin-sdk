@@ -6,4 +6,4 @@
  * Registry checks semver.gte(PLUGIN_SDK_VERSION, manifest.minHostVersion)
  * during activation and marks incompatible plugins accordingly.
  */
-export const PLUGIN_SDK_VERSION = '1.2.0';
+export const PLUGIN_SDK_VERSION = '2.0.0';

@@ -207,6 +207,20 @@ export interface PluginHost {
   /** Duplicate track: copy MIDI + role to a new track with a different preset. Only works on owned tracks. */
   duplicateTrack(trackId: string): Promise<PluginTrackHandle>;
 
+  /**
+   * Return the canonical list of valid role tokens that the host's
+   * classifier and UI understand. Plugins should use this list when
+   * building LLM prompts or validating role values before calling
+   * {@link setTrackRole}.
+   *
+   * The assistant owns the canonical taxonomy — plugins MUST NOT ship
+   * their own hardcoded list, which would drift from the host. Pair with
+   * {@link setTrackRole} to persist a classified role.
+   *
+   * @since SDK 2.0.0
+   */
+  getValidRoles(): readonly string[];
+
   // --- FX Operations (ownership-scoped) ---
 
   /** Get detailed FX state for a track (enabled, preset, dry/wet per category). */

@@ -136,7 +136,10 @@ export { useSceneState } from './hooks/useSceneState';
 // Constants
 // ============================================================================
 
-export { VALID_INSTRUMENT_ROLES } from './constants/instrument-roles';
+// VALID_INSTRUMENT_ROLES (SDK 1.x) removed in 2.0.0 — external plugins now
+// call `host.getValidRoles()` on PluginHost at runtime. The canonical list
+// lives in the assistant (src/music-engine/constants/instrument-classification.ts)
+// and is exposed via that accessor.
 export { PLUGIN_SDK_VERSION } from './constants/sdk-version';
 export { FX_PRESET_CONFIGS } from './constants/fx-presets';
 
