@@ -186,6 +186,21 @@ export interface PluginHost {
   /** Rename a track. Only works on owned tracks. */
   setTrackName(trackId: string, name: string): Promise<void>;
 
+  /**
+   * Persist a track's musical role to the `tracks.role` column. Call this
+   * after an LLM generation classifies the track (e.g. `'bass'`, `'lead'`,
+   * `'pad'`, `'fx'`, `'kicks'`) so downstream features — especially the v1
+   * transition generator's layer classifier — can see the role.
+   *
+   * Canonical values understood by the transition classifier include
+   * `bass`, `drums`, `lead`, `chords`, `pad`, `arp`, `fx`, `kicks`,
+   * `snares`, `hats`, `clap`, `perc`, `riser`, `impact`. Anything else is
+   * stored verbatim but won't match the neutral-role set.
+   *
+   * Only works on owned tracks.
+   */
+  setTrackRole(trackId: string, role: string): Promise<void>;
+
   /** Shuffle preset: keep MIDI, apply a random preset from the same category. Only works on owned tracks. */
   shufflePreset(trackId: string): Promise<ShufflePresetResult>;
 
