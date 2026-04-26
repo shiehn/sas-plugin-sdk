@@ -549,6 +549,31 @@ export interface PluginHost {
   /** Invoke the host's audio texture generation pipeline. */
   generateAudioTexture(request: PluginAudioTextureRequest): Promise<PluginAudioTextureResult>;
 
+  // --- Audio Cue Points + Offset (Migration 060) ---
+
+  /**
+   * Persist cue points (detected beat positions) for an audio track.
+   * Called once after `writeAudioClip` to remember the trim metadata so the
+   * UI can later draw beat ticks and snap-to-beat the manual offset.
+   *
+   * Pass `null` to clear cue points. Throws OWNERSHIP_VIOLATION if the
+   * track wasn't created by this plugin.
+   */
+  setCuePoints(trackId: string, cues: PluginCuePoints | null): Promise<void>;
+
+  /** Read cue points previously written by `setCuePoints`. Returns null when none stored. */
+  getCuePoints(trackId: string): Promise<PluginCuePoints | null>;
+
+  /**
+   * Set the manual sample-offset applied to the track's audio clip during
+   * playback. Positive shifts later, negative shifts earlier with head
+   * silence. Throws OWNERSHIP_VIOLATION if not owned by this plugin.
+   */
+  setAudioOffsetSamples(trackId: string, offsetSamples: number): Promise<void>;
+
+  /** Read the current manual offset (0 if never set). */
+  getAudioOffsetSamples(trackId: string): Promise<number>;
+
   // --- Scene Composition ---
 
   /** Trigger bulk composition for the active scene (LLM plans arrangement, creates tracks, generates MIDI). */
@@ -1035,7 +1060,8 @@ export type PluginErrorCode =
   | 'CANCELLED'              // User cancelled the operation
   | 'INCOMPATIBLE'           // Plugin requires newer SDK version
   | 'CAPABILITY_DENIED'      // Plugin lacks required capability
-  | 'SECRET_NOT_FOUND';      // Secret key doesn't exist
+  | 'SECRET_NOT_FOUND'       // Secret key doesn't exist
+  | 'VALIDATION_ERROR';      // Inputs failed schema/format validation
 
 export class PluginError extends Error {
   public readonly code: PluginErrorCode;
@@ -1182,6 +1208,35 @@ export interface PluginAudioTextureResult {
   filePath: string;
   /** Duration of the generated audio in seconds */
   durationSeconds: number;
+  /**
+   * Beat positions inside the generated audio file plus the detected BPM.
+   * Sample positions are relative to the file at `filePath`. Null when the
+   * audio-processor did not surface detection data (older binary, fallback
+   * path, or processing failed). Persist via `host.setCuePoints` after the
+   * clip is written so the OffsetScrubber UI can read them later.
+   */
+  cuePoints: PluginCuePoints | null;
+}
+
+/**
+ * Cue-points sidecar surfaced by the audio-processor `trim` command —
+ * sample positions for each detected beat inside the generated WAV.
+ * Mirrors the canonical `CuePoints` shape from the assistant; duplicated
+ * here so external plugins don't reach into sas-assistant internals.
+ */
+export interface PluginCuePoints {
+  /** Schema version (currently 1). */
+  schema: 1;
+  /** Sample rate the beat positions are expressed in. */
+  sample_rate: number;
+  /** Detected BPM (may differ from project BPM). Null when detection failed. */
+  detected_bpm: number | null;
+  /** Sample position of bar 1 / beat 1 inside the clip. */
+  downbeat_sample: number;
+  /** Monotone-increasing array of beat positions in samples. */
+  beats: number[];
+  /** ISO-8601 timestamp of when detection ran. */
+  detected_at: string;
 }
 
 // ============================================================================

@@ -70,6 +70,7 @@ export type {
   PluginSampleTrackInfo,
   PluginAudioTextureRequest,
   PluginAudioTextureResult,
+  PluginCuePoints,
   ComposeSceneOptions,
   ComposeSceneResult,
   ComposeProgressListener,
