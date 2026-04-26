@@ -513,6 +513,21 @@ export interface PluginHost {
   timeStretchSample(sampleId: string, targetBpm: number): Promise<PluginSampleInfo>;
 
   /**
+   * Fit a sample to the active scene's `(bpm, length_bars)`. Composes:
+   *   1. Time-stretch to scene BPM (no-op if already matching).
+   *   2. Chop / loop-stitch / passthrough so the resulting clip's duration
+   *      equals exactly `length_bars × 4 × (60 / bpm)` seconds.
+   *
+   * Required because the deck loops the clip at the scene's bar boundary —
+   * a 4-bar sample dropped into a 2-bar scene used to over-run; a 4-bar
+   * sample dropped into an 8-bar scene used to leave 4 bars of silence.
+   *
+   * The fitted sample is cached in the library by content hash, so
+   * subsequent calls for the same `(sample, bpm, bars)` return instantly.
+   */
+  fitSampleToScene(sampleId: string): Promise<PluginSampleInfo>;
+
+  /**
    * Lightweight one-shot sample audition through the cue (headphone) output.
    *
    * Plays the file via a dedicated SimpleLoopPlayer instance in the audio
