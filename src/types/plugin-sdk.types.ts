@@ -574,6 +574,48 @@ export interface PluginHost {
   /** Read the current manual offset (0 if never set). */
   getAudioOffsetSamples(trackId: string): Promise<number>;
 
+  // --- Raw / pre-trim audio metadata (audio-texture trim editor) ---
+
+  /**
+   * Read raw bytes of an audio file written by the host. The path may be
+   * `~app/`-relative or project-relative — the host resolves it using the
+   * same logic as `writeAudioClip`. Throws FILE_NOT_FOUND if the path
+   * can't be resolved or doesn't exist on disk.
+   */
+  getAudioFileBytes(filePath: string): Promise<ArrayBuffer>;
+
+  /** Persist the original (raw, un-trimmed) audio file path for a track. */
+  setRawAudioFilePath(trackId: string, filePath: string | null): Promise<void>;
+
+  /** Read the raw audio file path persisted via `setRawAudioFilePath`. */
+  getRawAudioFilePath(trackId: string): Promise<string | null>;
+
+  /**
+   * Persist the cue-points detected in the raw (un-trimmed) audio file.
+   * Sample positions are in input-file coordinates.
+   */
+  setRawCuePoints(trackId: string, cues: PluginCuePoints | null): Promise<void>;
+
+  /** Read raw-domain cue points persisted via `setRawCuePoints`. */
+  getRawCuePoints(trackId: string): Promise<PluginCuePoints | null>;
+
+  /** Persist the current trim window inside the raw audio file. */
+  setTrimWindow(trackId: string, window: PluginTrimWindow | null): Promise<void>;
+
+  /** Read the current trim window persisted via `setTrimWindow`. */
+  getTrimWindow(trackId: string): Promise<PluginTrimWindow | null>;
+
+  /**
+   * Re-trim the raw audio file at the given sample offset and replace the
+   * track's audio clip with the new slice. Persists updated trimmed-domain
+   * cue points and the new trim window.
+   */
+  commitTrimWindow(
+    trackId: string,
+    startSample: number,
+    durationSamples: number,
+  ): Promise<{ filePath: string; cuePoints: PluginCuePoints | null }>;
+
   // --- Scene Composition ---
 
   /** Trigger bulk composition for the active scene (LLM plans arrangement, creates tracks, generates MIDI). */
@@ -616,6 +658,119 @@ export interface PluginHost {
 
   /** Check if the stem splitter binary is available. */
   isStemSplitterAvailable(): Promise<boolean>;
+
+  // --- Audio Recording (capability-gated, since SDK 2.1.0) ---
+
+  /**
+   * Enumerate audio input devices visible to the engine. Empty list means
+   * no input device is available (or the OS denied permission). Requires
+   * `audioCapture` capability.
+   * @since SDK 2.1.0
+   */
+  getAudioInputDevices(): Promise<AudioInputDevice[]>;
+
+  /**
+   * Snapshot of engine state needed to start a recording session. Reads
+   * the engine sample rate, the active scene id, the transition-render
+   * lock state, and current BPM/bars. Requires `audioCapture`.
+   * @since SDK 2.1.0
+   */
+  getRecordingTargetInfo(): Promise<RecordingTargetInfo>;
+
+  /**
+   * Begin a recording session. Engine writes integer-PCM WAV chunks to
+   * disk; one chunk per call to `markRecordingChunkBoundary`. Each
+   * finalized chunk fires a `RecordingChunkFinalizedEvent` to
+   * subscribers of `onRecordingChunkFinalized`. Throws
+   * AUDIO_CAPTURE_DENIED on permission failure or if no device is
+   * available.
+   *
+   * Pass `deviceId` to override the platform-configured input (rare —
+   * only useful for tests or workflows that need a specific device).
+   * Omit it to use the platform's selected input from
+   * `AudioRoutingConfig.inputDeviceId` — this is the recommended path
+   * for plugins post-SDK-2.2.0.
+   *
+   * @since SDK 2.1.0 (deviceId required) — 2.2.0 made it optional.
+   */
+  startTrackRecording(deviceId?: string): Promise<void>;
+
+  /**
+   * Mark the boundary between two recording chunks. The engine closes the
+   * currently-open WAV writer and opens a new one; the closed file fires
+   * a `RecordingChunkFinalizedEvent` once flush completes. No-op if no
+   * recording session is active.
+   *
+   * Pass `boundaryHostTimeNs` from `DeckBoundaryEvent.boundaryHostTimeNs`
+   * for sample-perfect take alignment (Path 2). The engine then splits
+   * the chunk at the EXACT recorder-sample that corresponds to that
+   * host-time, eliminating the ~5–50 ms of jitter introduced by the
+   * legacy "split wherever the writer is" path. Required for any
+   * workflow that overlays multiple takes (vocalist comping, layered
+   * dubs); optional for single-take captures.
+   *
+   * @since SDK 2.1.0 — 2.4.0 added optional boundaryHostTimeNs.
+   */
+  markRecordingChunkBoundary(boundaryHostTimeNs?: number): Promise<void>;
+
+  /**
+   * Stop the active recording session. The final chunk is closed and
+   * finalized; its `RecordingChunkFinalizedEvent` fires before this
+   * promise resolves. Returns the path of the final chunk (also delivered
+   * via the event for symmetry).
+   * @since SDK 2.1.0
+   */
+  stopTrackRecording(): Promise<{ finalChunkPath: string; durationMs: number }>;
+
+  /**
+   * Subscribe to chunk-finalized events for this plugin's active recording
+   * session. Auto-unsubscribed on `deactivate`. Returns unsubscribe fn.
+   * @since SDK 2.1.0
+   */
+  onRecordingChunkFinalized(
+    listener: (event: RecordingChunkFinalizedEvent) => void
+  ): UnsubscribeFn;
+
+  /**
+   * Get the platform-configured audio input device, or null when no
+   * device is set. Read-only; configured via the assistant's
+   * AudioRoutingPanel. Plugins use this to display the current input
+   * to the user without exposing their own picker.
+   *
+   * @since SDK 2.2.0
+   */
+  getCurrentInputDevice(): Promise<AudioInputDevice | null>;
+
+  /**
+   * Get the platform's mic-to-output round-trip latency offset in
+   * samples. 0 = uncalibrated. Plugins recording audio apply this via
+   * `setAudioOffsetSamples` so takes line up with the source loop.
+   *
+   * @since SDK 2.2.0
+   */
+  getRecordingLatencyOffsetSamples(): Promise<number>;
+
+  /**
+   * Snapshot of the input level for the most recent audio block.
+   * Renderer polls at ~30Hz to drive a level meter / scrolling
+   * waveform without an event-channel subscription.
+   *
+   * @since SDK 2.3.0
+   */
+  getRecordingInputLevel(): Promise<{
+    peakDb: number;
+    peakLinear: number;
+    clipped: boolean;
+    active: boolean;
+  }>;
+
+  /**
+   * Reset the latched clip indicator. Safe regardless of whether
+   * monitoring or recording is active.
+   *
+   * @since SDK 2.3.0
+   */
+  clearRecordingInputClipIndicator(): Promise<void>;
 }
 
 // ============================================================================
@@ -910,6 +1065,20 @@ export interface DeckBoundaryEvent {
   bar: number;             // Current bar number (1-based)
   beat: number;            // Current beat within bar (1-based)
   loopCount: number;       // How many loops completed
+  /**
+   * Stream-time sample index at which the loop wrap was detected in the
+   * audio thread (engine's AudioBoundaryProbe). Undefined when the
+   * audio-thread anchor was unavailable. @since SDK 2.4.0
+   */
+  boundaryAudioSamplePosition?: number;
+  /**
+   * Monotonic host-time (nanoseconds) at the audio block in which the
+   * loop wrap was detected. Same clock as
+   * `juce::AudioIODeviceCallbackContext::hostTimeNs`. Pair with
+   * `markRecordingChunkBoundary(boundaryHostTimeNs)` for sample-perfect
+   * take alignment. @since SDK 2.4.0
+   */
+  boundaryHostTimeNs?: number;
 }
 
 export interface PluginTransportState {
@@ -1061,7 +1230,8 @@ export type PluginErrorCode =
   | 'INCOMPATIBLE'           // Plugin requires newer SDK version
   | 'CAPABILITY_DENIED'      // Plugin lacks required capability
   | 'SECRET_NOT_FOUND'       // Secret key doesn't exist
-  | 'VALIDATION_ERROR';      // Inputs failed schema/format validation
+  | 'VALIDATION_ERROR'       // Inputs failed schema/format validation
+  | 'AUDIO_CAPTURE_DENIED';  // OS-level mic permission denied or input device unavailable
 
 export class PluginError extends Error {
   public readonly code: PluginErrorCode;
@@ -1109,6 +1279,89 @@ export interface PluginCapabilities {
   network?: { allowedHosts?: string[] };
   /** Plugin needs native file dialog access */
   fileDialog?: boolean;
+  /**
+   * Plugin needs microphone / line-in capture. Gates the recording host
+   * methods (getAudioInputDevices, startTrackRecording, etc).
+   * @since SDK 2.1.0
+   */
+  audioCapture?: boolean;
+}
+
+// ============================================================================
+// Audio Recording (since SDK 2.1.0)
+// ============================================================================
+
+/**
+ * Audio input device exposed by the audio engine. The `deviceId` is the
+ * stable identifier returned by JUCE's AudioDeviceManager and accepted as
+ * the device argument to `startTrackRecording`.
+ * @since SDK 2.1.0
+ */
+export interface AudioInputDevice {
+  /** Stable device identifier — passed back to startTrackRecording. */
+  deviceId: string;
+  /** Human-readable device name (e.g., "MacBook Pro Microphone", "USB Mic"). */
+  label: string;
+  /** True if this is the system default input device. */
+  isDefault: boolean;
+  /** Number of input channels the device supports (1 = mono, 2 = stereo). */
+  channelCount: number;
+}
+
+/**
+ * Engine state snapshot that an audio-recording plugin needs before
+ * starting a session.
+ * @since SDK 2.1.0
+ */
+export interface RecordingTargetInfo {
+  /** Engine device sample rate, e.g. 44100 or 48000. */
+  engineSampleRate: number;
+  /** Active scene id, or null when no scene is selected. */
+  sceneId: string | null;
+  /** True when a transition render lock is held — recorder must refuse. */
+  isRenderLocked: boolean;
+  /** Current project BPM. */
+  bpm: number;
+  /** Active scene length in bars (4/4 assumed), or null when no scene. */
+  bars: number | null;
+  /**
+   * Sample-perfect-recording compatibility (Path 2 gate). When false,
+   * the recorder must refuse to start a session and surface
+   * `recordingCompatibilityReason` to the user — input + output
+   * devices cannot be sample-aligned.
+   * @since SDK 2.4.0
+   */
+  canRecordSamplePerfect?: boolean;
+  recordingCompatibilityReason?: string;
+}
+
+/**
+ * Event payload fired when the engine finalizes a recording chunk WAV
+ * file (either at a boundary mark or at session stop).
+ * @since SDK 2.1.0
+ */
+export interface RecordingChunkFinalizedEvent {
+  /** Absolute path to the finalized WAV file on disk. */
+  filePath: string;
+  /** Zero-based chunk index within the active session. */
+  chunkIndex: number;
+  /** Duration of this chunk in milliseconds. */
+  durationMs: number;
+  /** WAV sample rate. */
+  sampleRate: number;
+  /** WAV channel count. */
+  channels: number;
+  /**
+   * Sample-perfect-recording metadata (Path 2). When the chunk was
+   * closed via a host-time-anchored `markRecordingChunkBoundary` call,
+   * carries recorder-local sample positions plus the host-time at
+   * which the boundary fired. Undefined / -1 means the boundary
+   * lacked a host-time anchor (legacy or stop-driven finalize).
+   * @since SDK 2.4.0
+   */
+  recorderSampleStart?: number;
+  recorderSampleEnd?: number;
+  boundaryHostTimeNs?: number;
 }
 
 // ============================================================================
@@ -1216,6 +1469,19 @@ export interface PluginAudioTextureResult {
    * clip is written so the OffsetScrubber UI can read them later.
    */
   cuePoints: PluginCuePoints | null;
+  /**
+   * Path to the un-trimmed (raw) Lyria output. Used by the audio-texture
+   * trim editor to draw the full waveform. Persist via
+   * `host.setRawAudioFilePath`. Null when no raw file is available.
+   */
+  rawFilePath?: string | null;
+  /** Same beats as `cuePoints` in raw-file sample coordinates. */
+  rawCuePoints?: PluginCuePoints | null;
+  /**
+   * Auto-detected start of the trim window inside the raw file (sample
+   * offset). Null when detection was skipped.
+   */
+  inputStartSample?: number | null;
 }
 
 /**
@@ -1237,6 +1503,16 @@ export interface PluginCuePoints {
   beats: number[];
   /** ISO-8601 timestamp of when detection ran. */
   detected_at: string;
+}
+
+/**
+ * A trim window inside a raw (un-trimmed) audio file. `start_sample` is
+ * the offset from the start of the raw file; `duration_samples` is the
+ * length of the trimmed slice. Both are in raw-file sample coordinates.
+ */
+export interface PluginTrimWindow {
+  start_sample: number;
+  duration_samples: number;
 }
 
 // ============================================================================

@@ -71,6 +71,7 @@ export type {
   PluginAudioTextureRequest,
   PluginAudioTextureResult,
   PluginCuePoints,
+  PluginTrimWindow,
   ComposeSceneOptions,
   ComposeSceneResult,
   ComposeProgressListener,
@@ -85,6 +86,10 @@ export type {
   StemType,
   PluginStemSplitResult,
   PluginStemTrackInfo,
+  // Audio recording (since SDK 2.1.0)
+  AudioInputDevice,
+  RecordingTargetInfo,
+  RecordingChunkFinalizedEvent,
 } from './types/plugin-sdk.types';
 
 export { PluginError } from './types/plugin-sdk.types';
