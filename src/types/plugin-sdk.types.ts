@@ -742,6 +742,15 @@ export interface PluginHost {
   getCurrentInputDevice(): Promise<AudioInputDevice | null>;
 
   /**
+   * Subscribe to input-device changes (user picks a new mic in the
+   * Audio Routing panel). Listeners should refetch via
+   * `getCurrentInputDevice()`. Returns an unsubscribe fn.
+   *
+   * @since SDK 2.4.0
+   */
+  onInputDeviceChange(listener: () => void): UnsubscribeFn;
+
+  /**
    * Get the platform's mic-to-output round-trip latency offset in
    * samples. 0 = uncalibrated. Plugins recording audio apply this via
    * `setAudioOffsetSamples` so takes line up with the source loop.
