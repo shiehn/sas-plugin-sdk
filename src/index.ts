@@ -47,6 +47,18 @@ export type {
   UnsubscribeFn,
   LLMGenerationRequest,
   LLMGenerationResult,
+  // Tool-use LLM types — agentic plugins (chat panel, etc.) use these via
+  // `host.generateWithLLMTools` to drive a Claude-Code-style loop. SDK 2.4.0+.
+  LLMPart,
+  LLMContent,
+  LLMFunctionDeclaration,
+  LLMTool,
+  LLMGenerationConfig,
+  LLMSystemInstruction,
+  LLMToolUseRequest,
+  LLMUsageMetadata,
+  LLMCandidate,
+  LLMToolUseResponse,
   PluginPresetData,
   ShufflePresetResult,
   PluginSettingsSchema,

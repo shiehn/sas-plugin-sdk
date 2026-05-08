@@ -370,6 +370,30 @@ export interface PluginHost {
   /** Generate text/JSON via the host's authenticated LLM service. */
   generateWithLLM(request: LLMGenerationRequest): Promise<LLMGenerationResult>;
 
+  /**
+   * Generate with native tool-use (function calling). Used by agentic plugins
+   * (chat panel, etc.) to drive an iterative loop where the model calls tools,
+   * observes results, and decides next steps — same loop class as Claude Code
+   * or VS Code agent mode.
+   *
+   * Shape mirrors Gemini's `generateContent` REST surface; the host forwards
+   * verbatim to the gateway's Gemini-native passthrough endpoint, which adds
+   * the central Google API key. Plugins never see provider credentials.
+   *
+   * Available since SDK 2.4.0.
+   */
+  generateWithLLMTools(request: LLMToolUseRequest): Promise<LLMToolUseResponse>;
+
+  /**
+   * Resolve absolute paths for spawning the bundled `sas` CLI as a subprocess.
+   * Used by agentic plugins that drive the CLI as their tool surface (chat
+   * panel, etc.). Returns `null` when called from a renderer-side host or
+   * when the CLI isn't accessible.
+   *
+   * Available since SDK 2.4.0.
+   */
+  getCliPaths(): { appExe: string; cliEntry: string } | null;
+
   /** Check if LLM access is available (user authenticated + gateway reachable). */
   isLLMAvailable(): Promise<boolean>;
 
@@ -1169,6 +1193,105 @@ export interface LLMGenerationResult {
   tokensUsed: number;
   /** Model that generated the response */
   model: string;
+}
+
+// ----------------------------------------------------------------------------
+// Tool-use LLM types (Gemini-native shape, since SDK 2.4.0)
+// ----------------------------------------------------------------------------
+//
+// Plugins that want a Claude-Code / VS-Code-agent-mode loop call
+// `host.generateWithLLMTools(...)` with these shapes. The host forwards to
+// the gateway's Gemini-native passthrough endpoint, where Google's API key
+// is added centrally — plugins never see the raw key. Token usage is
+// tracked by the gateway just like `generateWithLLM`.
+//
+// Shapes mirror Gemini's REST `generateContent` surface deliberately. We do
+// not pull in `@google/genai` as a dependency: with the gateway as a
+// passthrough and the host owning auth, an SDK adds no value over typed
+// JSON, and we keep tighter control of breaking changes.
+
+/** A single part of a Gemini-style content block. */
+export interface LLMPart {
+  /** Plain text. Mutually exclusive with functionCall / functionResponse. */
+  text?: string;
+  /** A tool/function the model is asking the host to invoke. */
+  functionCall?: {
+    name: string;
+    args: Record<string, unknown>;
+  };
+  /** The result of a tool call, fed back into the loop on the next turn. */
+  functionResponse?: {
+    name: string;
+    response: Record<string, unknown>;
+  };
+}
+
+export interface LLMContent {
+  /** 'user' = user/tool-result; 'model' = assistant. */
+  role: 'user' | 'model';
+  parts: LLMPart[];
+}
+
+export interface LLMFunctionDeclaration {
+  name: string;
+  description: string;
+  /** JSON Schema. Use `type: 'object'` with `properties` for any tool. */
+  parameters: {
+    type: 'object';
+    properties?: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+export interface LLMTool {
+  functionDeclarations: LLMFunctionDeclaration[];
+}
+
+export interface LLMGenerationConfig {
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  maxOutputTokens?: number;
+}
+
+export interface LLMSystemInstruction {
+  parts: { text: string }[];
+}
+
+export interface LLMToolUseRequest {
+  /** Gemini model id (e.g. 'gemini-2.5-flash'). */
+  model: string;
+  /** Conversation so far, including any tool-result turns. */
+  contents: LLMContent[];
+  /** System prompt as Gemini-native systemInstruction. */
+  systemInstruction?: LLMSystemInstruction;
+  /** Tool declarations the model may call. */
+  tools?: LLMTool[];
+  /** Optional tool-call mode override. */
+  toolConfig?: {
+    functionCallingConfig?: {
+      mode?: 'AUTO' | 'ANY' | 'NONE';
+      allowedFunctionNames?: string[];
+    };
+  };
+  generationConfig?: LLMGenerationConfig;
+}
+
+export interface LLMUsageMetadata {
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  totalTokenCount: number;
+}
+
+export interface LLMCandidate {
+  content: LLMContent;
+  finishReason?: string;
+  index?: number;
+}
+
+export interface LLMToolUseResponse {
+  candidates: LLMCandidate[];
+  usageMetadata?: LLMUsageMetadata;
 }
 
 // ============================================================================
