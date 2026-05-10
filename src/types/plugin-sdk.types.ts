@@ -651,6 +651,19 @@ export interface PluginHost {
   /** Subscribe to engine ready events (fires when the engine finishes loading tracks after a scene change). */
   onEngineReady(listener: () => void): UnsubscribeFn;
 
+  /**
+   * Subscribe to external state mutations (CLI, MCP, or HTTP-API tool calls
+   * that bypass plugin-host methods). Fires after such a tool finishes,
+   * signalling that scene/track DB state may have changed underneath the
+   * plugin's local cache. Use it to refresh state that the plugin doesn't
+   * own — e.g. re-running adoptSceneTracks() so AI-created tracks become
+   * visible without requiring the user to switch scenes.
+   *
+   * Optional: only the renderer-side host implements this. Main-side
+   * plugins should subscribe to the typed domain-event bus instead.
+   */
+  onAfterAgentMutation?(listener: () => void): UnsubscribeFn;
+
   // --- MIDI Extensions (Phase 2) ---
 
   /** Audition a single note on a track (fire-and-forget preview). */
