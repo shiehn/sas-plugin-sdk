@@ -1231,6 +1231,14 @@ export interface LLMPart {
   functionCall?: {
     name: string;
     args: Record<string, unknown>;
+    /**
+     * Opaque signature returned by Gemini 3+ tool-use models. Must be echoed
+     * verbatim when the assistant turn is replayed on a later iteration, or
+     * the API rejects the request with a 400 ("Function call is missing a
+     * thought_signature in functionCall parts."). Pre-Gemini-3 models leave
+     * this undefined; preserving it round-trip is safe across families.
+     */
+    thoughtSignature?: string;
   };
   /** The result of a tool call, fed back into the loop on the next turn. */
   functionResponse?: {
