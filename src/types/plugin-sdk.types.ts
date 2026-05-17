@@ -146,6 +146,13 @@ export interface PluginUIProps {
   onOpenContract?: (() => void) | null;
   /** Callback to expand this plugin's own accordion section. */
   onExpandSelf?: (() => void) | null;
+  /**
+   * Whether the host's accordion section for this plugin is currently expanded.
+   * Plugin UIs can watch transitions to take focus, refresh data, etc. The host
+   * keeps the plugin mounted across collapse/expand to preserve state, so this
+   * prop (not mount/unmount) is the signal that the user is actively viewing.
+   */
+  isExpanded?: boolean;
 }
 
 // ============================================================================
@@ -413,7 +420,11 @@ export interface PluginHost {
 
   /**
    * Execute a host app tool by name. Delegates to the in-process
-   * ToolRegistry — every mutation broadcasts to the UI automatically.
+   * ToolRegistry — every call (including this one) broadcasts to the
+   * UI's `mutations:tool-executed` channel so renderer state stays
+   * fresh whether the call mutates or is read-only. Read-only callers
+   * pay zero extra cost since the renderer debounces and skips
+   * redundant reloads.
    *
    * For scene-scoped tools tagged with `autoBindSceneId`, the host
    * overrides the caller's `sceneId` param with the currently-active
@@ -426,6 +437,25 @@ export interface PluginHost {
     name: string,
     params: Record<string, unknown>
   ): Promise<PluginAppToolResult>;
+
+  /**
+   * Monotonic counter that increments on every state mutation
+   * (`broadcastMutation('tool-executed', ...)`). Use as a cache key for
+   * derived state that depends on the project: when the counter changes,
+   * something mutated; when it doesn't, your cache is still valid.
+   *
+   * Mostly aimed at performance-sensitive callers like ambient-context
+   * builders that want to skip re-querying state when nothing has
+   * changed. The counter is process-local — it resets on app restart
+   * and is not durable across sessions.
+   *
+   * Implementation detail: the counter is bumped by `mutation-broadcaster`
+   * before the broadcaster fires, so a synchronous `getMutationSeq()`
+   * call from inside a mutation listener will see the post-bump value.
+   *
+   * @since SDK 2.6.0
+   */
+  getMutationSeq(): number;
 
   // --- Preset System ---
 
