@@ -146,6 +146,13 @@ export interface PluginUIProps {
   onOpenContract?: (() => void) | null;
   /** Callback to expand this plugin's own accordion section. */
   onExpandSelf?: (() => void) | null;
+  /**
+   * Whether the host's accordion section for this plugin is currently expanded.
+   * Plugin UIs can watch transitions to take focus, refresh data, etc. The host
+   * keeps the plugin mounted across collapse/expand to preserve state, so this
+   * prop (not mount/unmount) is the signal that the user is actively viewing.
+   */
+  isExpanded?: boolean;
 }
 
 // ============================================================================
@@ -370,6 +377,30 @@ export interface PluginHost {
   /** Generate text/JSON via the host's authenticated LLM service. */
   generateWithLLM(request: LLMGenerationRequest): Promise<LLMGenerationResult>;
 
+  /**
+   * Generate with native tool-use (function calling). Used by agentic plugins
+   * (chat panel, etc.) to drive an iterative loop where the model calls tools,
+   * observes results, and decides next steps — same loop class as Claude Code
+   * or VS Code agent mode.
+   *
+   * Shape mirrors Gemini's `generateContent` REST surface; the host forwards
+   * verbatim to the gateway's Gemini-native passthrough endpoint, which adds
+   * the central Google API key. Plugins never see provider credentials.
+   *
+   * Available since SDK 2.4.0.
+   */
+  generateWithLLMTools(request: LLMToolUseRequest): Promise<LLMToolUseResponse>;
+
+  /**
+   * Resolve absolute paths for spawning the bundled `sas` CLI as a subprocess.
+   * Used by agentic plugins that drive the CLI as their tool surface (chat
+   * panel, etc.). Returns `null` when called from a renderer-side host or
+   * when the CLI isn't accessible.
+   *
+   * Available since SDK 2.4.0.
+   */
+  getCliPaths(): { appExe: string; cliEntry: string } | null;
+
   /** Check if LLM access is available (user authenticated + gateway reachable). */
   isLLMAvailable(): Promise<boolean>;
 
@@ -389,7 +420,11 @@ export interface PluginHost {
 
   /**
    * Execute a host app tool by name. Delegates to the in-process
-   * ToolRegistry — every mutation broadcasts to the UI automatically.
+   * ToolRegistry — every call (including this one) broadcasts to the
+   * UI's `mutations:tool-executed` channel so renderer state stays
+   * fresh whether the call mutates or is read-only. Read-only callers
+   * pay zero extra cost since the renderer debounces and skips
+   * redundant reloads.
    *
    * For scene-scoped tools tagged with `autoBindSceneId`, the host
    * overrides the caller's `sceneId` param with the currently-active
@@ -402,6 +437,25 @@ export interface PluginHost {
     name: string,
     params: Record<string, unknown>
   ): Promise<PluginAppToolResult>;
+
+  /**
+   * Monotonic counter that increments on every state mutation
+   * (`broadcastMutation('tool-executed', ...)`). Use as a cache key for
+   * derived state that depends on the project: when the counter changes,
+   * something mutated; when it doesn't, your cache is still valid.
+   *
+   * Mostly aimed at performance-sensitive callers like ambient-context
+   * builders that want to skip re-querying state when nothing has
+   * changed. The counter is process-local — it resets on app restart
+   * and is not durable across sessions.
+   *
+   * Implementation detail: the counter is bumped by `mutation-broadcaster`
+   * before the broadcaster fires, so a synchronous `getMutationSeq()`
+   * call from inside a mutation listener will see the post-bump value.
+   *
+   * @since SDK 2.6.0
+   */
+  getMutationSeq(): number;
 
   // --- Preset System ---
 
@@ -627,6 +681,19 @@ export interface PluginHost {
   /** Subscribe to engine ready events (fires when the engine finishes loading tracks after a scene change). */
   onEngineReady(listener: () => void): UnsubscribeFn;
 
+  /**
+   * Subscribe to external state mutations (CLI, MCP, or HTTP-API tool calls
+   * that bypass plugin-host methods). Fires after such a tool finishes,
+   * signalling that scene/track DB state may have changed underneath the
+   * plugin's local cache. Use it to refresh state that the plugin doesn't
+   * own — e.g. re-running adoptSceneTracks() so AI-created tracks become
+   * visible without requiring the user to switch scenes.
+   *
+   * Optional: only the renderer-side host implements this. Main-side
+   * plugins should subscribe to the typed domain-event bus instead.
+   */
+  onAfterAgentMutation?(listener: () => void): UnsubscribeFn;
+
   // --- MIDI Extensions (Phase 2) ---
 
   /** Audition a single note on a track (fire-and-forget preview). */
@@ -740,6 +807,15 @@ export interface PluginHost {
    * @since SDK 2.2.0
    */
   getCurrentInputDevice(): Promise<AudioInputDevice | null>;
+
+  /**
+   * Subscribe to input-device changes (user picks a new mic in the
+   * Audio Routing panel). Listeners should refetch via
+   * `getCurrentInputDevice()`. Returns an unsubscribe fn.
+   *
+   * @since SDK 2.4.0
+   */
+  onInputDeviceChange(listener: () => void): UnsubscribeFn;
 
   /**
    * Get the platform's mic-to-output round-trip latency offset in
@@ -1160,6 +1236,113 @@ export interface LLMGenerationResult {
   tokensUsed: number;
   /** Model that generated the response */
   model: string;
+}
+
+// ----------------------------------------------------------------------------
+// Tool-use LLM types (Gemini-native shape, since SDK 2.4.0)
+// ----------------------------------------------------------------------------
+//
+// Plugins that want a Claude-Code / VS-Code-agent-mode loop call
+// `host.generateWithLLMTools(...)` with these shapes. The host forwards to
+// the gateway's Gemini-native passthrough endpoint, where Google's API key
+// is added centrally — plugins never see the raw key. Token usage is
+// tracked by the gateway just like `generateWithLLM`.
+//
+// Shapes mirror Gemini's REST `generateContent` surface deliberately. We do
+// not pull in `@google/genai` as a dependency: with the gateway as a
+// passthrough and the host owning auth, an SDK adds no value over typed
+// JSON, and we keep tighter control of breaking changes.
+
+/** A single part of a Gemini-style content block. */
+export interface LLMPart {
+  /** Plain text. Mutually exclusive with functionCall / functionResponse. */
+  text?: string;
+  /** A tool/function the model is asking the host to invoke. */
+  functionCall?: {
+    name: string;
+    args: Record<string, unknown>;
+    /**
+     * Opaque signature returned by Gemini 3+ tool-use models. Must be echoed
+     * verbatim when the assistant turn is replayed on a later iteration, or
+     * the API rejects the request with a 400 ("Function call is missing a
+     * thought_signature in functionCall parts."). Pre-Gemini-3 models leave
+     * this undefined; preserving it round-trip is safe across families.
+     */
+    thoughtSignature?: string;
+  };
+  /** The result of a tool call, fed back into the loop on the next turn. */
+  functionResponse?: {
+    name: string;
+    response: Record<string, unknown>;
+  };
+}
+
+export interface LLMContent {
+  /** 'user' = user/tool-result; 'model' = assistant. */
+  role: 'user' | 'model';
+  parts: LLMPart[];
+}
+
+export interface LLMFunctionDeclaration {
+  name: string;
+  description: string;
+  /** JSON Schema. Use `type: 'object'` with `properties` for any tool. */
+  parameters: {
+    type: 'object';
+    properties?: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+export interface LLMTool {
+  functionDeclarations: LLMFunctionDeclaration[];
+}
+
+export interface LLMGenerationConfig {
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  maxOutputTokens?: number;
+}
+
+export interface LLMSystemInstruction {
+  parts: { text: string }[];
+}
+
+export interface LLMToolUseRequest {
+  /** Gemini model id (e.g. 'gemini-2.5-flash'). */
+  model: string;
+  /** Conversation so far, including any tool-result turns. */
+  contents: LLMContent[];
+  /** System prompt as Gemini-native systemInstruction. */
+  systemInstruction?: LLMSystemInstruction;
+  /** Tool declarations the model may call. */
+  tools?: LLMTool[];
+  /** Optional tool-call mode override. */
+  toolConfig?: {
+    functionCallingConfig?: {
+      mode?: 'AUTO' | 'ANY' | 'NONE';
+      allowedFunctionNames?: string[];
+    };
+  };
+  generationConfig?: LLMGenerationConfig;
+}
+
+export interface LLMUsageMetadata {
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  totalTokenCount: number;
+}
+
+export interface LLMCandidate {
+  content: LLMContent;
+  finishReason?: string;
+  index?: number;
+}
+
+export interface LLMToolUseResponse {
+  candidates: LLMCandidate[];
+  usageMetadata?: LLMUsageMetadata;
 }
 
 // ============================================================================
