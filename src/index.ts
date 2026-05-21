@@ -102,6 +102,9 @@ export type {
   AudioInputDevice,
   RecordingTargetInfo,
   RecordingChunkFinalizedEvent,
+  // Drum sampler (since SDK 1.2.0)
+  DrumKit,
+  ListAudioFilesOptions,
 } from './types/plugin-sdk.types';
 
 export { PluginError } from './types/plugin-sdk.types';
@@ -166,3 +169,4 @@ export { FX_PRESET_CONFIGS } from './constants/fx-presets';
 // ============================================================================
 
 export { sliderToDb, dbToSlider, SLIDER_UNITY, DB_MAX, DB_MIN } from './utils/volume-conversion';
+export { formatConcurrentTracks } from './utils/format-concurrent-tracks';

@@ -15,6 +15,28 @@ import type { ComponentType, ReactNode } from 'react';
 /** What kind of Tracktion content this plugin creates */
 export type GeneratorType = 'midi' | 'audio' | 'sample' | 'hybrid';
 
+/**
+ * Drum-kit configuration for `host.setTrackDrumKit`. Prototype shape carries
+ * a single sample; future multi-slot kits will extend this with a `notes`
+ * map (`Record<midiNote, samplePath>`) for GM-style drum maps.
+ */
+export interface DrumKit {
+  /** Absolute path to the sample (WAV, AIFF, FLAC). Triggered on every note-on. */
+  samplePath: string;
+}
+
+/** Options for `host.listAudioFiles`. */
+export interface ListAudioFilesOptions {
+  /**
+   * File extensions to include (dot-prefixed, lowercase). Defaults to
+   * `['.wav']`. Other audio formats (`.aif`, `.flac`, `.mp3`) are passed
+   * through verbatim; the host does not transcode.
+   */
+  extensions?: string[];
+  /** Walk subdirectories. Defaults to `false`. */
+  recursive?: boolean;
+}
+
 /** Describes an available instrument plugin (VST3/AU synth) on the system. */
 export interface InstrumentDescriptor {
   /** Stable plugin identifier for loading (VST3 TUID or AU component ID) */
@@ -344,6 +366,39 @@ export interface PluginHost {
   /** Close the instrument plugin's editor window. */
   hideInstrumentEditor(trackId: string): Promise<void>;
 
+  // --- Drum Sampler ---
+
+  /**
+   * Load the engine's built-in sampler on the track (if not already
+   * present) and configure it with a single one-shot sound. Every MIDI
+   * note triggers the loaded sample regardless of pitch — used by the
+   * drum-generator plugin where the LLM's emitted pitch is advisory.
+   *
+   * Idempotent: calling repeatedly on the same track swaps the loaded
+   * sample without stacking more sampler instances. The sampler counts
+   * as the track's instrument; mixing it with `setTrackInstrument` on
+   * the same track is undefined behaviour for now.
+   *
+   * @since SDK 1.2.0
+   */
+  setTrackDrumKit(trackId: string, kit: DrumKit): Promise<void>;
+
+  // --- Filesystem (sample library scanning) ---
+
+  /**
+   * List audio files (by default `.wav`) under `rootPath`. Returns
+   * absolute file paths. `recursive` defaults to false; pass `true` to
+   * walk subdirectories. The drum-generator plugin uses this to
+   * lazily discover available samples without round-tripping each
+   * folder through `getSamples`.
+   *
+   * Plugins MUST NOT use this to read paths outside their declared
+   * sample roots — the host may add path validation in a later release.
+   *
+   * @since SDK 1.2.0
+   */
+  listAudioFiles(rootPath: string, options?: ListAudioFilesOptions): Promise<string[]>;
+
   // --- Scene Context (read-only) ---
 
   /** Get the FULL generation context for the active scene. */
@@ -400,6 +455,23 @@ export interface PluginHost {
    * Available since SDK 2.4.0.
    */
   getCliPaths(): { appExe: string; cliEntry: string } | null;
+
+  /**
+   * Resolve the absolute path to a bundled resource directory shipped with
+   * the app via `extraResources` (e.g. `'drum-samples'`,
+   * `'tracktion-presets'`). In dev, resolves to
+   * `<projectRoot>/resources/<name>`. In packaged builds, resolves to
+   * `<process.resourcesPath>/<name>`.
+   *
+   * Returns `null` if the host cannot resolve paths in this context
+   * (e.g. Electron mocked out in unit tests). Plugins MUST null-check and
+   * either degrade gracefully or fall back to a known dev path.
+   *
+   * Async by design: the renderer-side host proxy round-trips through IPC.
+   *
+   * @since SDK 2.7.0
+   */
+  getBundledResourcePath(name: string): Promise<string | null>;
 
   /** Check if LLM access is available (user authenticated + gateway reachable). */
   isLLMAvailable(): Promise<boolean>;
@@ -628,7 +700,7 @@ export interface PluginHost {
   /** Read the current manual offset (0 if never set). */
   getAudioOffsetSamples(trackId: string): Promise<number>;
 
-  // --- Raw / pre-trim audio metadata (audio-texture trim editor) ---
+  // --- Raw / pre-trim audio metadata (stems trim editor) ---
 
   /**
    * Read raw bytes of an audio file written by the host. The path may be
@@ -1090,6 +1162,15 @@ export interface MusicalContext {
   genre: string | null;  // 'Drum & Bass', 'Lo-fi Hip Hop', etc.
   timeSignature: string; // '4/4', '3/4', '6/8'
   chordProgression: PluginChordTiming[];
+  /**
+   * The scene's natural-language contract prompt (e.g. "dark psytrance,
+   * driving 130 BPM, claustrophobic"). Null when the scene has no
+   * contract set yet. Auto-prefixed to the LLM by `host.generateWithLLM`
+   * so every per-track generation sees the scene-level intent without
+   * each plugin having to plumb it through manually.
+   * @since SDK 1.2.0
+   */
+  contractPrompt: string | null;
 }
 
 export interface PluginChordTiming {
@@ -1109,6 +1190,15 @@ export interface PluginGenerationContext {
     genre: string | null;
   };
   concurrentTracks: PluginConcurrentTrackInfo[];
+  /**
+   * Count of tracks the host had to drop entirely from `concurrentTracks`
+   * because their notes pushed the running total past the cross-track
+   * budget. Panels should disclose this to the LLM (e.g. "… N additional
+   * tracks omitted to fit token budget") so the model knows it is
+   * working with partial context.
+   * @since SDK 1.2.0
+   */
+  truncatedTrackCount?: number;
 }
 
 export interface PluginConcurrentTrackInfo {
@@ -1117,6 +1207,22 @@ export interface PluginConcurrentTrackInfo {
   presetCategory: string | null;
   /** Notes organized by which chord they fall under */
   notesByChord: PluginChordSegment[];
+  /**
+   * The user-typed prompt that produced this track's MIDI (from
+   * `tracks.prompt`). Lets the LLM see *intent* alongside the notes —
+   * "punchy 909 kick" carries more meaning than the kick MIDI alone.
+   * @since SDK 1.2.0
+   */
+  prompt?: string;
+  /**
+   * True when the host capped this track's notes (per-track budget).
+   * The `notesByChord` payload is a prefix of the real content; the
+   * total dropped count is `originalNoteCount - sum(notesByChord.notes.length)`.
+   * @since SDK 1.2.0
+   */
+  truncated?: boolean;
+  /** The track's full note count before per-track truncation. */
+  originalNoteCount?: number;
 }
 
 export interface PluginChordSegment {
@@ -1653,7 +1759,7 @@ export interface PluginAudioTextureResult {
    */
   cuePoints: PluginCuePoints | null;
   /**
-   * Path to the un-trimmed (raw) Lyria output. Used by the audio-texture
+   * Path to the un-trimmed (raw) Lyria output. Used by the stems
    * trim editor to draw the full waveform. Persist via
    * `host.setRawAudioFilePath`. Null when no raw file is available.
    */
