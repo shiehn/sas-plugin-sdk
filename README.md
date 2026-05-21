@@ -31,8 +31,8 @@ These built-in plugins serve as reference implementations:
 | Plugin | Type | Description | Source |
 |--------|------|-------------|--------|
 | Synth Generator | `midi` | AI-powered MIDI generation with Surge XT presets | [sas-synth-plugin](https://github.com/shiehn/sas-synth-plugin) |
-| Sample Player | `sample` | Sample library browser with time-stretching | [sas-sample-plugin](https://github.com/shiehn/sas-sample-plugin) |
-| Audio Texture | `audio` | AI audio texture generation | [sas-audio-plugin](https://github.com/shiehn/sas-audio-plugin) |
+| Loops | `sample` | Audio loop / sample library browser with time-stretching | [sas-loops-plugin](https://github.com/shiehn/sas-loops-plugin) |
+| Stems | `audio` | AI audio-from-text generation with optional stem splitting | [sas-stems-plugin](https://github.com/shiehn/sas-stems-plugin) |
 
 ## What's in the SDK
 
@@ -373,8 +373,8 @@ All errors are `PluginError` instances with a typed `code` property:
 
 - **[Signals & Sorcery](https://signalsandsorcery.com)** — the flagship AI music production workstation
 - **[sas-synth-plugin](https://github.com/shiehn/sas-synth-plugin)** — AI MIDI generation with Surge XT
-- **[sas-sample-plugin](https://github.com/shiehn/sas-sample-plugin)** — Sample library browser with time-stretching
-- **[sas-audio-plugin](https://github.com/shiehn/sas-audio-plugin)** — AI audio texture generation
+- **[sas-loops-plugin](https://github.com/shiehn/sas-loops-plugin)** — Audio loop / sample library browser with time-stretching
+- **[sas-stems-plugin](https://github.com/shiehn/sas-stems-plugin)** — AI audio-from-text generation with stem splitting
 - **[DeclarAgent](https://github.com/shiehn/DeclarAgent)** — Declarative agent + MCP transport for S&S
 
 <p align="center">
