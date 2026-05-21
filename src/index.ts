@@ -104,6 +104,9 @@ export type {
   RecordingChunkFinalizedEvent,
   // Drum sampler (since SDK 1.2.0)
   DrumKit,
+  // Pitched instrument sampler (since SDK 1.3.0)
+  InstrumentZone,
+  InstrumentSampler,
   ListAudioFilesOptions,
 } from './types/plugin-sdk.types';
 

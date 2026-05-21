@@ -25,6 +25,49 @@ export interface DrumKit {
   samplePath: string;
 }
 
+/**
+ * One key-mapped sample zone in a pitched, polyphonic instrument.
+ * Used by `host.setTrackInstrumentSampler`.
+ *
+ * Zones in an InstrumentSampler MUST be disjoint and ordered low to
+ * high by rootKey — the engine rejects overlap because Tracktion would
+ * otherwise double-trigger every matching sound on each note-on.
+ */
+export interface InstrumentZone {
+  /** Absolute path to the zone's sample (WAV, FLAC, AIFF). */
+  samplePath: string;
+  /** MIDI note this sample sounds at unshifted (0-127). */
+  rootKey: number;
+  /** Inclusive low end of the key range that triggers this zone (0-127). */
+  minKey: number;
+  /** Inclusive high end of the key range that triggers this zone (0-127). */
+  maxKey: number;
+  /**
+   * If true, the sampler plays the sample for the duration the note is
+   * held and stops on note-off (good for sustaining pads, organs, etc.,
+   * whose source has been pre-trimmed to a steady-state region).
+   * If false, the sampler plays the sample through to its end ignoring
+   * note-off (good for plucks, mallets, percussion).
+   */
+  openEnded: boolean;
+}
+
+/**
+ * Pitched instrument configuration for `host.setTrackInstrumentSampler`.
+ * Parallel to `DrumKit` but multi-zone and pitch-aware. A manifest
+ * authored by the pitched-sample pipeline reduces to one of these.
+ *
+ * NOTE: This is distinct from `host.setTrackInstrument(trackId, pluginId)`
+ * which loads a VST3/AU synth plugin. `setTrackInstrumentSampler` loads
+ * the built-in Tracktion sampler with N pre-rendered zones.
+ */
+export interface InstrumentSampler {
+  /** Display name (e.g. "Bright Warm Pluck"). Used for diagnostics. */
+  name: string;
+  /** Disjoint zones, ordered low->high by rootKey. At least one required. */
+  zones: ReadonlyArray<InstrumentZone>;
+}
+
 /** Options for `host.listAudioFiles`. */
 export interface ListAudioFilesOptions {
   /**
@@ -382,6 +425,26 @@ export interface PluginHost {
    * @since SDK 1.2.0
    */
   setTrackDrumKit(trackId: string, kit: DrumKit): Promise<void>;
+
+  /**
+   * Load the engine's built-in sampler on the track (if not already
+   * present) and configure it with a pitched, polyphonic, multi-zone
+   * instrument. Each MIDI note triggers the zone whose [minKey,maxKey]
+   * range contains it; the zone is played back pitch-shifted relative
+   * to its rootKey. Polyphony is handled by the Tracktion sampler's
+   * voice allocator.
+   *
+   * Used by the instrument-generator plugin to load a pre-rendered
+   * pitched-sample manifest. Mutually exclusive with `setTrackDrumKit`
+   * on the same track (both occupy the sampler slot) and with
+   * `setTrackInstrument(pluginId)` (which loads a VST synth instead).
+   *
+   * Idempotent: calling repeatedly on the same track swaps the loaded
+   * zones without stacking sampler instances.
+   *
+   * @since SDK 1.3.0
+   */
+  setTrackInstrumentSampler(trackId: string, instrument: InstrumentSampler): Promise<void>;
 
   // --- Filesystem (sample library scanning) ---
 
