@@ -274,7 +274,14 @@ export interface PluginHost {
   setTrackRole(trackId: string, role: string): Promise<void>;
 
   /** Shuffle preset: keep MIDI, apply a random preset from the same category. Only works on owned tracks. */
-  shufflePreset(trackId: string): Promise<ShufflePresetResult>;
+  /**
+   * Shuffle preset: keep MIDI, apply a random preset from the same category.
+   * `excludeNames` (since SDK 1.5.0) filters preset names out of the random
+   * pool; the current preset is always implicitly excluded. Use this to
+   * implement a "no-repeat until full cycle" shuffle: the panel accumulates
+   * the history and resets when shufflePreset throws "no presets available".
+   */
+  shufflePreset(trackId: string, excludeNames?: readonly string[]): Promise<ShufflePresetResult>;
 
   /** Duplicate track: copy MIDI + role to a new track with a different preset. Only works on owned tracks. */
   duplicateTrack(trackId: string): Promise<PluginTrackHandle>;
