@@ -462,6 +462,23 @@ export interface PluginHost {
    */
   listAudioFiles(rootPath: string, options?: ListAudioFilesOptions): Promise<string[]>;
 
+  /**
+   * Read a text file's contents from the host filesystem (UTF-8). Returns
+   * `null` on any read error (missing file, permission, etc.) — the
+   * caller does not need to wrap the call in try/catch.
+   *
+   * Intended for plugin sample-library metadata: instrument manifest
+   * JSON (`<instrument-id>/manifest.json`) and prompt-sibling text
+   * (`<id>.txt`). Plugins parse the returned string themselves so the
+   * host stays content-agnostic.
+   *
+   * Plugins MUST NOT use this to read paths outside their declared
+   * sample roots — the host may add path validation in a later release.
+   *
+   * @since SDK 1.4.0
+   */
+  readTextFile(absolutePath: string): Promise<string | null>;
+
   // --- Scene Context (read-only) ---
 
   /** Get the FULL generation context for the active scene. */
