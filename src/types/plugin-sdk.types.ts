@@ -638,6 +638,50 @@ export interface PluginHost {
   /** Persisted key-value settings store. */
   settings: PluginSettingsStore;
 
+  // --- Sample Pack Distribution ---
+
+  /**
+   * Return the absolute path to an installed sample pack's root directory,
+   * or `null` if the pack is missing OR its installed version doesn't match
+   * what the current app build expects.
+   *
+   * Plugins should treat `null` as "show the download CTA"; do NOT fall back
+   * to a hardcoded path. The host owns where samples live (currently
+   * `<userData>/samples/<installSubdir>/`).
+   *
+   * Stable packIds: `'sas-drum-pack'`, `'sas-instrument-pack'`. Both packs
+   * are downloaded on demand via the host's pack-download flow; see
+   * `host.isSamplePackCurrent` and the renderer-side `DownloadPackButton`.
+   *
+   * @since SDK 2.7.0
+   */
+  getSamplePackRoot(packId: string): Promise<string | null>;
+
+  /**
+   * True if the installed version of `packId` matches the version this app
+   * build expects. False if the pack is missing OR the installed version
+   * differs (older or newer).
+   *
+   * Plugins call this on activate to decide between rendering their normal
+   * UI vs the "Sample library not installed / Update available" CTA.
+   *
+   * @since SDK 2.7.0
+   */
+  isSamplePackCurrent(packId: string): Promise<boolean>;
+
+  /**
+   * Return the currently-installed version string for `packId` (e.g. `'1'`,
+   * `'2'`), or `null` if the pack is not installed at all. Reads the
+   * `_pack-version.json` marker inside the pack's install dir.
+   *
+   * Useful for distinguishing the "missing" CTA from the "stale, update
+   * available" CTA — plugins can call this when `isSamplePackCurrent`
+   * returns false to pick the right empty-state message.
+   *
+   * @since SDK 2.7.0
+   */
+  getSamplePackInstalledVersion(packId: string): Promise<string | null>;
+
   // --- Scoped Data API ---
 
   /** Get a value from scene-scoped plugin data. */
