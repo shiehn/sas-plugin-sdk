@@ -157,6 +157,17 @@ export {
   type SamplePackCardInfo,
 } from './components/SamplePackCTACard';
 
+// Waveform / audio-clip UI toolkit — shared by audio-oriented plugins (stems,
+// recorder). Promoted from the app's src/plugins/shared (W9 — so extracted
+// plugins reach it through the SDK, not a relative app path). Since 2.10.0.
+export { WaveformView, type WaveformViewProps } from './components/WaveformView';
+export { LevelMeter, type LevelMeterProps } from './components/LevelMeter';
+export { ScrollingWaveform, type ScrollingWaveformProps } from './components/ScrollingWaveform';
+export { OffsetScrubber, type OffsetScrubberProps } from './components/OffsetScrubber';
+export { computePeaks, drawWaveform, type WaveformPeaks } from './components/waveform';
+export { analyzeWavPeak, type PeakAnalysis } from './components/wavPeakAnalyzer';
+export { synthesizeCuePoints, type SynthesizeCuePointsOptions } from './components/synthesizeCuePoints';
+
 // ============================================================================
 // Hooks
 // ============================================================================

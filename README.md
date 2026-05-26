@@ -69,6 +69,18 @@ Pre-built components that match the host app's visual style:
 | `DownloadPackButton` | Download/verify/extract button for a sample pack; driven through `host.startSamplePackDownload` + `host.onSamplePackProgress` (since 2.8.0) |
 | `SamplePackCTACard` | Empty-state card a generator panel renders when its sample pack is missing or stale; wraps `DownloadPackButton` (since 2.8.0) |
 
+**Waveform / audio-clip toolkit** *(since 2.10.0)* — shared by audio-oriented plugins (stems, recorder):
+
+| Export | Kind | Description |
+|--------|------|-------------|
+| `WaveformView` | component | Static waveform render of an audio file (decodes + draws peaks) |
+| `ScrollingWaveform` | component | Live scrolling waveform for input monitoring / recording |
+| `LevelMeter` | component | Peak/RMS level meter |
+| `OffsetScrubber` | component | Drag-to-offset clip start with beat tick marks + snap |
+| `computePeaks` / `drawWaveform` | util | Peak math + canvas drawing (`WaveformPeaks`) |
+| `analyzeWavPeak` | util | Peak analysis of a WAV (`PeakAnalysis`) |
+| `synthesizeCuePoints` | util | Derive cue points from a clip (`SynthesizeCuePointsOptions`) |
+
 ```typescript
 import {
   TrackRow, VolumeSlider, PanSlider, FxToggleBar, SorceryProgressBar,
