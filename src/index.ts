@@ -149,6 +149,13 @@ export { VolumeSlider } from './components/VolumeSlider';
 export { PanSlider } from './components/PanSlider';
 export { FxToggleBar, type FxToggleBarProps } from './components/FxToggleBar';
 export { SorceryProgressBar, calculateTimeBasedTarget } from './components/SorceryProgressBar';
+export { DownloadPackButton, type DownloadPackButtonProps, type DownloadPackButtonVariant } from './components/DownloadPackButton';
+export {
+  SamplePackCTACard,
+  type SamplePackCTACardProps,
+  type SamplePackCTACardStatus,
+  type SamplePackCardInfo,
+} from './components/SamplePackCTACard';
 
 // ============================================================================
 // Hooks
