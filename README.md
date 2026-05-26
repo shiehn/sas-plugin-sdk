@@ -264,6 +264,17 @@ Six categories in signal chain order: `eq` > `compressor` > `chorus` > `phaser` 
 | `getActiveSceneId()` | Current scene ID (synchronous) |
 | `getSceneList()` | All scenes in the project |
 
+### Sample Packs *(status methods since SDK 2.7.0; download/progress since 2.8.0)*
+Versioned sample packs (drums, instruments, the loop/sample library) install on demand under `<userData>/samples/`. A plugin checks install state to decide between its normal UI and a "download library" CTA, then drives the download **through the host** — never `window.electronAPI`.
+
+| Method | Description |
+|--------|-------------|
+| `getSamplePackRoot(packId)` | Absolute path to the installed pack root, or null if missing/stale |
+| `isSamplePackCurrent(packId)` | True iff the installed version matches this build's expected version |
+| `getSamplePackInstalledVersion(packId)` | Installed version string, or null if not installed |
+| `startSamplePackDownload(packId)` | Trigger download + install; resolves `{ success, error? }` |
+| `onSamplePackProgress(packId, listener)` | Subscribe to `{ status, progress }` updates; returns an unsubscribe fn |
+
 ### Transport & Events
 | Method | Description |
 |--------|-------------|

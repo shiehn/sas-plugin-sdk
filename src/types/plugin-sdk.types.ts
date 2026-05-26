@@ -682,6 +682,36 @@ export interface PluginHost {
    */
   getSamplePackInstalledVersion(packId: string): Promise<string | null>;
 
+  /**
+   * Trigger a download + install of `packId` via the host's pack system (the
+   * same flow `getSamplePackRoot` / `isSamplePackCurrent` report on). Resolves
+   * when the install completes or fails. Plugins call this from a "download
+   * library" CTA instead of reaching into the app's IPC (`window.electronAPI`)
+   * directly.
+   *
+   * @since SDK 2.8.0
+   */
+  startSamplePackDownload(
+    packId: string
+  ): Promise<{ success: boolean; error?: string }>;
+
+  /**
+   * Subscribe to download/install progress for `packId`. Returns an unsubscribe
+   * fn. `status` mirrors the host's pack-download states (e.g. `'downloading' |
+   * 'extracting' | 'installing' | 'complete' | 'error'`); `progress` is 0-100.
+   *
+   * @since SDK 2.8.0
+   */
+  onSamplePackProgress(
+    packId: string,
+    listener: (progress: {
+      packId?: string;
+      status: string;
+      progress: number;
+      message?: string;
+    }) => void
+  ): UnsubscribeFn;
+
   // --- Scoped Data API ---
 
   /** Get a value from scene-scoped plugin data. */
