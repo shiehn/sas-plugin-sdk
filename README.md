@@ -66,9 +66,24 @@ Pre-built components that match the host app's visual style:
 | `FxToggleBar` | Per-track FX control panel with 6 categories, 5 presets each, and dry/wet sliders |
 | `SorceryProgressBar` | Animated progress bar with time-based pacing for long operations |
 | `InstrumentDrawer` | Searchable grid of available VST3/AU instrument plugins |
+| `DownloadPackButton` | Download/verify/extract button for a sample pack; driven through `host.startSamplePackDownload` + `host.onSamplePackProgress` (since 2.8.0) |
+| `SamplePackCTACard` | Empty-state card a generator panel renders when its sample pack is missing or stale; wraps `DownloadPackButton` (since 2.8.0) |
 
 ```typescript
-import { TrackRow, VolumeSlider, PanSlider, FxToggleBar, SorceryProgressBar } from '@signalsandsorcery/plugin-sdk';
+import {
+  TrackRow, VolumeSlider, PanSlider, FxToggleBar, SorceryProgressBar,
+  SamplePackCTACard, DownloadPackButton,
+} from '@signalsandsorcery/plugin-sdk';
+
+// SamplePackCTACard / DownloadPackButton take the `host` the plugin received
+// and drive the download entirely through PluginHost — a plugin never reaches
+// the app's renderer or window.electronAPI to manage its sample pack.
+<SamplePackCTACard
+  host={host}
+  pack={{ packId: 'sas-drum-pack', displayName: 'Drum Sample Library', description: 'Kicks, snares, hats', sizeBytes: 100_934_888 }}
+  status={packStatus}            // 'missing' | 'stale' | 'checking'
+  onDownloadComplete={refresh}   // re-check pack status when the download finishes
+/>
 ```
 
 ### Hooks
@@ -84,12 +99,15 @@ const [prompts, setPrompts, setPromptsForScene] = useSceneState(activeSceneId, {
 
 ```typescript
 import {
-  VALID_INSTRUMENT_ROLES,  // ['bass', 'kick', 'snare', 'lead', 'pad', ...]
-  PLUGIN_SDK_VERSION,      // '1.0.0'
+  PLUGIN_SDK_VERSION,      // '2.8.0'
   FX_CATEGORIES,           // ['eq', 'compressor', 'chorus', 'phaser', 'delay', 'reverb']
   FX_PRESET_CONFIGS,       // Preset definitions for all 6 FX categories
 } from '@signalsandsorcery/plugin-sdk';
 ```
+
+> **Instrument roles are not a static export.** `VALID_INSTRUMENT_ROLES` was
+> removed in SDK 2.0.0 — call `host.getValidRoles()` at runtime instead. The
+> canonical role list lives in the host app, so plugins always see the current set.
 
 ## Quick Start
 
