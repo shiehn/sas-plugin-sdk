@@ -293,6 +293,16 @@ Versioned sample packs (drums, instruments, the loop/sample library) install on 
 | `startSamplePackDownload(packId)` | Trigger download + install; resolves `{ success, error? }` |
 | `onSamplePackProgress(packId, listener)` | Subscribe to `{ status, progress }` updates; returns an unsubscribe fn |
 
+### Deck Playback *(since SDK 2.9.0)*
+The two playback decks: `'loop-a'` (composition / cue, headphones) and `'loop-b'` (performance / main). These route through the **same host path the workstation UI uses**, so the deck mutual-exclusivity rules (the host's PlaybackRuleEngine) are enforced identically — a plugin can't bypass them. Used by playback-driven plugins (e.g. the recorder, which starts loop-a so a take has a backing loop). Available to renderer-hosted plugins.
+
+| Method | Description |
+|--------|-------------|
+| `deckPlay(deckId, contentId?, contentType?)` | Start a deck playing a scene/transition (`contentType` defaults to `'scene'`); resolves `{ success, error?, code? }` |
+| `deckStop(deckId)` | Stop a deck; resolves `{ success, error? }` |
+| `onDeckStateChanged(listener)` | Subscribe to `{ deckId, property, value }` (e.g. `property: 'playing'`); returns an unsubscribe fn |
+| `onAllDecksStopped(listener)` | Subscribe to the global "all decks stopped" event; returns an unsubscribe fn |
+
 ### Transport & Events
 | Method | Description |
 |--------|-------------|

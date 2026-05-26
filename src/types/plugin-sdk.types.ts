@@ -712,6 +712,53 @@ export interface PluginHost {
     }) => void
   ): UnsubscribeFn;
 
+  // --- Deck playback ---
+  //
+  // The two playback decks: `'loop-a'` (composition / cue, headphones) and
+  // `'loop-b'` (performance / main). These route through the SAME host path
+  // the workstation UI uses, so the deck mutual-exclusivity rules
+  // (PlaybackRuleEngine) are enforced identically — a plugin cannot bypass
+  // them. Used by playback-driven plugins (e.g. the recorder, which starts
+  // loop-a so a take has a backing loop). Available on renderer-hosted plugins.
+
+  /**
+   * Start a deck playing the given scene/transition. Mirrors the workstation's
+   * transport play. `contentType` defaults to `'scene'`.
+   *
+   * @since SDK 2.9.0
+   */
+  deckPlay(
+    deckId: string,
+    contentId?: string,
+    contentType?: 'scene' | 'transition'
+  ): Promise<{ success: boolean; error?: string; code?: string }>;
+
+  /**
+   * Stop a deck.
+   *
+   * @since SDK 2.9.0
+   */
+  deckStop(deckId: string): Promise<{ success: boolean; error?: string }>;
+
+  /**
+   * Subscribe to per-deck state changes. Each event carries the `deckId`, the
+   * `property` that changed (e.g. `'playing'`), and its new `value`. Returns an
+   * unsubscribe fn.
+   *
+   * @since SDK 2.9.0
+   */
+  onDeckStateChanged(
+    listener: (event: { deckId: string; property: string; value: unknown }) => void
+  ): UnsubscribeFn;
+
+  /**
+   * Subscribe to the "all decks stopped" engine event (e.g. global transport
+   * stop). Returns an unsubscribe fn.
+   *
+   * @since SDK 2.9.0
+   */
+  onAllDecksStopped(listener: () => void): UnsubscribeFn;
+
   // --- Scoped Data API ---
 
   /** Get a value from scene-scoped plugin data. */
