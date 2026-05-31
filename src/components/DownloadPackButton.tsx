@@ -37,11 +37,14 @@ export interface DownloadPackButtonProps {
   onDownloadComplete?: () => void;
 }
 
+// Base-1024 (GiB/MiB) to match the host's own SamplePackDownloader formatter and
+// the `_pack-version.json` / sample-packs.ts size comments (e.g. a 28.5e9-byte
+// instrument bundle reads as "26.6 GB", not the decimal "28.5 GB").
 function formatSize(bytes?: number): string {
   if (!bytes || bytes <= 0) return '';
-  const gb = bytes / 1e9;
+  const gb = bytes / 1024 ** 3;
   if (gb >= 1) return `${gb.toFixed(1)} GB`;
-  const mb = bytes / 1e6;
+  const mb = bytes / 1024 ** 2;
   return `${Math.round(mb)} MB`;
 }
 

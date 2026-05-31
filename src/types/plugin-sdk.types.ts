@@ -224,6 +224,27 @@ export interface PluginUIProps {
 // PluginHost API
 // ============================================================================
 
+/**
+ * Canonical display metadata for a distributable sample pack, sourced from the
+ * HOST's pack registry (the same source it uses to download + version-check the
+ * bundle). Returned by `host.getSamplePackInfo` so a plugin's download CTA can
+ * show the live name / description / size instead of a hardcoded copy that
+ * drifts when a new pack version ships. Structurally compatible with
+ * `SamplePackCardInfo` (the CTA card prop).
+ *
+ * @since SDK 2.12.0
+ */
+export interface SamplePackPublicInfo {
+  /** Stable pack identifier, e.g. `'sas-instrument-pack'`. */
+  packId: string;
+  /** Human-readable pack name for the CTA headline. */
+  displayName: string;
+  /** One-line description of the pack's contents. */
+  description: string;
+  /** Size in bytes of the default download variant. */
+  sizeBytes: number;
+}
+
 /** Scoped API surface that plugins interact with. Plugins NEVER get direct TracktionEngine access. */
 export interface PluginHost {
   // --- Track Management (ownership-scoped) ---
@@ -711,6 +732,22 @@ export interface PluginHost {
       message?: string;
     }) => void
   ): UnsubscribeFn;
+
+  /**
+   * Return the canonical display metadata (`displayName`, `description`,
+   * `sizeBytes`) for `packId` from the host's pack registry — the SAME source
+   * the host uses to download + version-check the pack. A plugin's download CTA
+   * should prefer this over a hardcoded copy so the size/description stay in
+   * sync with whatever bundle the host actually ships (no per-version drift).
+   * Resolves `null` for an unknown packId.
+   *
+   * Optional so a plugin built against this SDK still runs on an older host:
+   * callers should fall back to their own static copy when it is absent or
+   * returns `null`.
+   *
+   * @since SDK 2.12.0
+   */
+  getSamplePackInfo?(packId: string): Promise<SamplePackPublicInfo | null>;
 
   // --- Deck playback ---
   //
@@ -1985,7 +2022,7 @@ export interface PluginAudioTextureResult {
  * Cue-points sidecar surfaced by the audio-processor `trim` command —
  * sample positions for each detected beat inside the generated WAV.
  * Mirrors the canonical `CuePoints` shape from the assistant; duplicated
- * here so external plugins don't reach into sas-assistant internals.
+ * here so external plugins don't reach into sas-app internals.
  */
 export interface PluginCuePoints {
   /** Schema version (currently 1). */

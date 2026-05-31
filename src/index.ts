@@ -191,3 +191,14 @@ export { FX_PRESET_CONFIGS } from './constants/fx-presets';
 
 export { sliderToDb, dbToSlider, SLIDER_UNITY, DB_MAX, DB_MIN } from './utils/volume-conversion';
 export { formatConcurrentTracks } from './utils/format-concurrent-tracks';
+
+// Semantic sample matching — pick the closest sample to a text intent by
+// scoring against each sample's StableAudio prompt, with variety-preserving
+// top-k weighted selection. Shared by the drum + instrument resolvers. Since 2.11.0.
+export {
+  tokenizePrompt,
+  scorePromptMatch,
+  pickTopKWeighted,
+  type ScoredCandidate,
+  type PickTopKOptions,
+} from './utils/semantic-match';
