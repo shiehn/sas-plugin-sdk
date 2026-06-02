@@ -41,6 +41,11 @@ export interface InstrumentDrawerProps {
   onRestoreSound?: (index: number) => void;
   /** Toggle the favorite (⭐) flag on a history entry; omit to hide the star. */
   onToggleFavorite?: (index: number) => void;
+  // --- Import a sound from another scene (the "⇪ Import Sample/Preset" button) ---
+  /** Open the sound-import picker; omit to hide the button. */
+  onImportSound?: () => void;
+  /** Button label, e.g. "Import Sample" (drums/instruments) or "Import Preset" (synths). */
+  importSoundLabel?: string;
 }
 
 // ============================================================================
@@ -61,6 +66,8 @@ export function InstrumentDrawer({
   soundHistoryCursor = -1,
   onRestoreSound,
   onToggleFavorite,
+  onImportSound,
+  importSoundLabel,
 }: InstrumentDrawerProps): React.ReactElement {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'pick' | 'history'>('pick');
@@ -117,6 +124,17 @@ export function InstrumentDrawer({
         </span>
       </div>
       {tabs}
+      {onImportSound && (
+        <button
+          type="button"
+          data-testid="sdk-drawer-import-sound"
+          onClick={onImportSound}
+          className="w-full px-2 py-1 text-[11px] rounded-sm border border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent transition-colors"
+          title="Copy a sound from a track in another scene (ignores contract)"
+        >
+          ⇪ {importSoundLabel ?? 'Import Sound'}
+        </button>
+      )}
     </div>
   );
 

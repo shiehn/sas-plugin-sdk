@@ -21,6 +21,7 @@ export type {
   PluginTrackInfo,
   ImportCandidateTrack,
   ImportCandidateScene,
+  TrackSoundSnapshot,
   ListImportableTracksOptions,
   PluginSynthInfo,
   PluginTrackRuntimeState,

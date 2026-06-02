@@ -114,6 +114,10 @@ export interface SDKTrackRowProps {
   onRestoreSound?: (index: number) => void;
   /** Toggle the favorite (⭐) flag on a history entry. */
   onToggleFavorite?: (index: number) => void;
+  /** Open the drawer's sound-import picker; omit to hide the button. */
+  onImportSound?: () => void;
+  /** Sound-import button label ("Import Sample" / "Import Preset"). */
+  importSoundLabel?: string;
 }
 
 // ============================================================================
@@ -164,6 +168,8 @@ export function TrackRow({
   soundHistoryCursor,
   onRestoreSound,
   onToggleFavorite,
+  onImportSound,
+  importSoundLabel,
 }: SDKTrackRowProps): React.ReactElement {
   const { muted: isMuted, solo: isSoloed, volume: currentVolume, pan: currentPan } = runtimeState;
 
@@ -430,7 +436,7 @@ export function TrackRow({
 
       {/* Instrument Drawer */}
       {instrumentDrawerOpen && !fxDrawerOpen &&
-        ((availableInstruments && onInstrumentSelect && onRefreshInstruments) || onRestoreSound) && (
+        ((availableInstruments && onInstrumentSelect && onRefreshInstruments) || onRestoreSound || onImportSound) && (
         <div data-testid="sdk-instrument-drawer" className="border border-t-0 border-sas-border bg-sas-bg rounded-b-sm px-3 py-2">
           <InstrumentDrawer
             instruments={availableInstruments}
@@ -446,6 +452,8 @@ export function TrackRow({
             soundHistoryCursor={soundHistoryCursor}
             onRestoreSound={onRestoreSound}
             onToggleFavorite={onToggleFavorite}
+            onImportSound={onImportSound}
+            importSoundLabel={importSoundLabel}
           />
         </div>
       )}

@@ -32,10 +32,19 @@ export interface ImportTrackModalProps {
   onClose: () => void;
   /** Fired after a successful import with the new track handle. */
   onImported: (handle: PluginTrackHandle) => void;
-  /** Optional modal title (default "Import from scene"). */
+  /** Optional modal title (default names the whole-track import). */
   title?: string;
   /** data-testid prefix so each panel's modal is addressable in tests. */
   testIdPrefix?: string;
+  /**
+   * 'track' (default) imports a whole track via `importTrack`. 'sound' copies
+   * ONLY the sound onto an existing track: every candidate is selectable (the
+   * contract gate is ignored) and the chosen track is handed back via `onPick`
+   * instead of being imported — the panel applies it via `host.getTrackSound`.
+   */
+  mode?: 'track' | 'sound';
+  /** Sound-mode pick handler — required when `mode='sound'`. */
+  onPick?: (sel: { sourceTrackDbId: string; trackName: string; sceneName: string }) => void | Promise<void>;
 }
 
 type LoadState =
@@ -48,8 +57,10 @@ export function ImportTrackModal({
   open,
   onClose,
   onImported,
-  title = 'Import from scene',
+  title = 'Import track from scene (must match contract)',
   testIdPrefix = 'import-track',
+  mode = 'track',
+  onPick,
 }: ImportTrackModalProps): React.ReactElement | null {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
@@ -89,7 +100,20 @@ export function ImportTrackModal({
   }, [open, onClose]);
 
   const handleImport = useCallback(
-    async (track: ImportCandidateTrack, sourceSceneId: string): Promise<void> => {
+    async (track: ImportCandidateTrack, sourceSceneId: string, sceneName: string): Promise<void> => {
+      // Sound mode: ignore the gate and hand the pick back to the panel, which
+      // reads the source sound via host.getTrackSound and applies it itself.
+      if (mode === 'sound') {
+        setImportingTrackId(track.trackId);
+        try {
+          await onPick?.({ sourceTrackDbId: track.dbId, trackName: track.name, sceneName });
+          onClose();
+        } catch (err: unknown) {
+          host.showToast?.('error', err instanceof Error ? err.message : 'Import failed');
+          setImportingTrackId(null);
+        }
+        return;
+      }
       if (!track.importable || !host.importTrack) return;
       setImportingTrackId(track.trackId);
       try {
@@ -101,7 +125,7 @@ export function ImportTrackModal({
         setImportingTrackId(null);
       }
     },
-    [host, onImported, onClose],
+    [host, onImported, onClose, mode, onPick],
   );
 
   if (!open) return null;
@@ -161,7 +185,9 @@ export function ImportTrackModal({
 
           {load.status === 'ready' && scenes.length === 0 && (
             <div className="py-8 text-center text-xs text-sas-muted" data-testid={`${testIdPrefix}-empty`}>
-              No other scenes have a compatible track to import.
+              {mode === 'sound'
+                ? 'No other scenes have a sound to import.'
+                : 'No other scenes have a compatible track to import.'}
             </div>
           )}
 
@@ -188,7 +214,10 @@ export function ImportTrackModal({
             <ul className="flex flex-col gap-1" data-testid={`${testIdPrefix}-track-list`}>
               {selectedScene.tracks.map((track) => {
                 const busy = importingTrackId === track.trackId;
-                const disabled = !track.importable || busy;
+                // Sound mode ignores the contract gate — every candidate is a
+                // valid sound source. Track mode honors `importable`.
+                const gated = mode === 'track' && !track.importable;
+                const disabled = gated || busy;
                 return (
                   <li key={track.dbId}>
                     <button
@@ -198,10 +227,10 @@ export function ImportTrackModal({
                           : 'bg-sas-panel-alt border-sas-border text-sas-text hover:border-sas-accent hover:text-sas-accent'
                       }`}
                       disabled={disabled}
-                      title={track.importable ? undefined : track.disabledReason}
-                      onClick={() => void handleImport(track, selectedScene.sceneId)}
+                      title={gated ? track.disabledReason : undefined}
+                      onClick={() => void handleImport(track, selectedScene.sceneId, selectedScene.sceneName)}
                       data-testid={`${testIdPrefix}-track`}
-                      data-importable={track.importable ? 'true' : 'false'}
+                      data-importable={mode === 'sound' || track.importable ? 'true' : 'false'}
                     >
                       <span className="truncate">
                         {track.name}
@@ -209,7 +238,7 @@ export function ImportTrackModal({
                       </span>
                       {busy ? (
                         <span className="text-sas-muted">…</span>
-                      ) : !track.importable ? (
+                      ) : gated ? (
                         <span className="text-sas-muted">⊘</span>
                       ) : null}
                     </button>

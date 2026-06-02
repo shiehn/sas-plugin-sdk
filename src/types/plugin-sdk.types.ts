@@ -544,6 +544,18 @@ export interface PluginHost {
    */
   importTrack?(opts: { sourceSceneId: string; sourceTrackId: string }): Promise<PluginTrackHandle>;
 
+  /**
+   * Read a source track's CURRENT sound — sample path (drums), sampler zones
+   * (instruments), or Surge preset state (synths) — so a panel can copy just
+   * the sound onto another track, IGNORING the contract gate that `importTrack`
+   * enforces ("different contract, same preset"). Read-only: applies nothing.
+   * The selector is the source track's DB row id (`ImportCandidateTrack.dbId`).
+   * Returns null when the track has no stored sound. Optional — callers MUST
+   * null-check (see `listImportableTracks`).
+   * @since SDK 2.14.0
+   */
+  getTrackSound?(sourceTrackDbId: string): Promise<TrackSoundSnapshot | null>;
+
   // --- Transport & Playback Events ---
 
   /** Subscribe to transport state changes. Returns unsubscribe function. */
@@ -1295,6 +1307,17 @@ export interface ImportCandidateScene {
   /** Candidate tracks of this panel's type (may include disabled ones). */
   tracks: ImportCandidateTrack[];
 }
+
+/**
+ * A source track's current sound, as returned by `host.getTrackSound`. The
+ * discriminant matches the panel that reads it: drums → 'sample', instruments →
+ * 'instrument', synths → 'preset'. `label` is the human name for the History row.
+ * @since SDK 2.14.0
+ */
+export type TrackSoundSnapshot =
+  | { kind: 'sample'; samplePath: string; label: string }
+  | { kind: 'instrument'; displayName: string; instrumentId: string | null; zones: InstrumentZone[]; label: string }
+  | { kind: 'preset'; state: string; label: string };
 
 /** Options for `PluginHost.listImportableTracks`. @since SDK 2.13.0 */
 export interface ListImportableTracksOptions {
