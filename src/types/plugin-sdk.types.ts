@@ -521,6 +521,29 @@ export interface PluginHost {
   /** Get list of all scenes in the project. */
   getSceneList(): Promise<PluginSceneInfo[]>;
 
+  /**
+   * Enumerate importable track candidates from OTHER scenes, scoped to this
+   * plugin's track type (derived from the plugin id). Each candidate is
+   * annotated with `importable` + `disabledReason` — the host computes the
+   * harmonic/length/tempo gate so the UI only renders it. The active scene is
+   * always excluded; scenes with no candidate of this type are omitted.
+   *
+   * Optional so a plugin built against this SDK still loads on an older host —
+   * callers MUST null-check and hide the affordance when absent.
+   * @since SDK 2.13.0
+   */
+  listImportableTracks?(opts?: ListImportableTracksOptions): Promise<ImportCandidateScene[]>;
+
+  /**
+   * Import a source track (from another scene) into the active scene as a
+   * faithful, independent copy, delegating to the `import_track_from_scene`
+   * tool. Returns the new track's handle so the panel can append a row.
+   * Throws on a gate violation — call only for candidates with `importable`.
+   * Optional — callers MUST null-check (see `listImportableTracks`).
+   * @since SDK 2.13.0
+   */
+  importTrack?(opts: { sourceSceneId: string; sourceTrackId: string }): Promise<PluginTrackHandle>;
+
   // --- Transport & Playback Events ---
 
   /** Subscribe to transport state changes. Returns unsubscribe function. */
@@ -1239,6 +1262,50 @@ export interface PluginTrackHandle {
   instrumentName?: string | null;
 }
 
+/**
+ * One source track offered by `listImportableTracks`, already filtered to the
+ * calling panel's type. The host computes the gate; the UI only renders it.
+ * @since SDK 2.13.0
+ */
+export interface ImportCandidateTrack {
+  /** Source track's engine track id (the selector passed back to importTrack). */
+  trackId: string;
+  /** Source track's DB row id (globally unique; good React key). */
+  dbId: string;
+  /** Display name shown in the modal row. */
+  name: string;
+  /** Musical role if set (drives the row icon). */
+  role?: string;
+  /** True when this track can be copied into the active scene as-is. */
+  importable: boolean;
+  /** Why the track is disabled (shown as a tooltip). Present iff `!importable`. */
+  disabledReason?: string;
+}
+
+/**
+ * One OTHER scene and its candidate tracks (already type-filtered). Scenes with
+ * zero candidates of the panel's type are omitted by the host.
+ * @since SDK 2.13.0
+ */
+export interface ImportCandidateScene {
+  /** Source scene's engine scene id. */
+  sceneId: string;
+  /** Source scene's display name. */
+  sceneName: string;
+  /** Candidate tracks of this panel's type (may include disabled ones). */
+  tracks: ImportCandidateTrack[];
+}
+
+/** Options for `PluginHost.listImportableTracks`. @since SDK 2.13.0 */
+export interface ListImportableTracksOptions {
+  /**
+   * Coarse content family. 'midi' = synth/drum/instrument, 'audio' = stems,
+   * 'sample' = loops. Defaults are derived from the calling plugin id, so
+   * panels normally pass nothing.
+   */
+  family?: 'midi' | 'audio' | 'sample';
+}
+
 export interface PluginTrackInfo extends PluginTrackHandle {
   /** Is track muted? */
   muted: boolean;
@@ -1711,6 +1778,22 @@ export interface PluginPresetData {
 export interface ShufflePresetResult {
   presetName: string;
   presetCategory: string;
+}
+
+/**
+ * One entry in a track's in-session "sound history" — the data behind the
+ * TrackRow ↩ back-arrow and the drawer "History" tab (see `useSoundHistory`).
+ *
+ * `descriptor` is opaque to the SDK: each generator plugin defines its own shape
+ * (a drum sample path string, an instrument `{ displayName, zones }`, a synth
+ * `{ pluginIndex, stateBase64 }`) and is the value handed back to the plugin's
+ * `applySound` callback to re-apply the sound.
+ */
+export interface SoundHistoryEntry {
+  /** Human-readable label shown in the History list (filename, preset/instrument name). */
+  label: string;
+  /** Opaque, plugin-defined value used to re-apply this sound. */
+  descriptor: unknown;
 }
 
 // ============================================================================

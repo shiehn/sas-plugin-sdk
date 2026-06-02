@@ -11,9 +11,9 @@
  */
 
 import React from 'react';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, ChevronDown, Undo2 } from 'lucide-react';
 import { InstrumentDrawer } from './InstrumentDrawer';
-import type { InstrumentDescriptor } from '../types/plugin-sdk.types';
+import type { InstrumentDescriptor, SoundHistoryEntry } from '../types/plugin-sdk.types';
 import { VolumeSlider } from './VolumeSlider';
 import { PanSlider } from './PanSlider';
 import { FxToggleBar } from './FxToggleBar';
@@ -53,6 +53,10 @@ export interface SDKTrackRowProps {
   onGenerate?: () => void;
   /** Shuffle preset (optional — omit to hide Shuffle button) */
   onShuffle?: () => void;
+  /** Undo the last shuffle — re-applies the previous sound (optional). */
+  onUndoShuffle?: () => void;
+  /** Whether there is a previous sound to step back to (controls ↩ visibility). */
+  canUndoShuffle?: boolean;
   /** Duplicate track (optional — omit to hide Copy button) */
   onCopy?: () => void;
   /** Delete track */
@@ -105,6 +109,13 @@ export interface SDKTrackRowProps {
   onShowEditor?: () => void;
   /** Called when user wants to go back from editor view */
   onBackToInstruments?: () => void;
+  // --- Sound History (drawer "History" tab) ---
+  /** Ordered list of sounds this track has had this session. */
+  soundHistory?: readonly SoundHistoryEntry[];
+  /** Index into soundHistory of the currently-applied sound. */
+  soundHistoryCursor?: number;
+  /** Restore a sound from the History tab by index. */
+  onRestoreSound?: (index: number) => void;
 }
 
 // ============================================================================
@@ -151,6 +162,11 @@ export function TrackRow({
   instrumentDrawerStage,
   onShowEditor,
   onBackToInstruments,
+  soundHistory,
+  soundHistoryCursor,
+  onRestoreSound,
+  onUndoShuffle,
+  canUndoShuffle,
 }: SDKTrackRowProps): React.ReactElement {
   const { muted: isMuted, solo: isSoloed, volume: currentVolume, pan: currentPan } = runtimeState;
 
@@ -321,8 +337,23 @@ export function TrackRow({
               x
             </button>
           </div>
-          {/* Bottom row: [Shuffle] [FX] Solo [P] — Shuffle/FX only shown when handlers provided */}
+          {/* Bottom row: [↩] [Shuffle] [FX] Solo [▾] — back-arrow shown only when there's a prior sound */}
           <div className="flex gap-1 items-center">
+            {onShuffle && canUndoShuffle && onUndoShuffle && (
+              <button
+                data-testid="sdk-undo-shuffle-button"
+                onClick={onUndoShuffle}
+                disabled={isGenerating}
+                className={`px-1.5 py-0.5 rounded-sm border transition-colors ${
+                  isGenerating
+                    ? 'bg-sas-panel border-sas-border text-sas-muted/30 cursor-not-allowed'
+                    : 'bg-sas-panel-alt border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent'
+                }`}
+                title="Back to previous sound"
+              >
+                <Undo2 className="w-3 h-3" strokeWidth={2.5} />
+              </button>
+            )}
             {onShuffle && (
               <button
                 data-testid="sdk-shuffle-button"
@@ -392,9 +423,9 @@ export function TrackRow({
                         ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/40'
                         : 'bg-sas-panel-alt text-sas-muted hover:bg-sas-border'
                 }`}
-                title={`Plugin: ${instrumentName ?? 'Surge XT'}${instrumentMissing ? ' (missing)' : ''}`}
+                title={`Sound — presets & history${instrumentMissing ? ' (instrument missing)' : ''}`}
               >
-                P
+                <ChevronDown className="w-3 h-3" strokeWidth={2.5} />
               </button>
             )}
           </div>
@@ -416,7 +447,8 @@ export function TrackRow({
       )}
 
       {/* Instrument Drawer */}
-      {instrumentDrawerOpen && !fxDrawerOpen && availableInstruments && onInstrumentSelect && onRefreshInstruments && (
+      {instrumentDrawerOpen && !fxDrawerOpen &&
+        ((availableInstruments && onInstrumentSelect && onRefreshInstruments) || onRestoreSound) && (
         <div data-testid="sdk-instrument-drawer" className="border border-t-0 border-sas-border bg-sas-bg rounded-b-sm px-3 py-2">
           <InstrumentDrawer
             instruments={availableInstruments}
@@ -428,6 +460,9 @@ export function TrackRow({
             onShowEditor={onShowEditor}
             onBackToInstruments={onBackToInstruments}
             selectedInstrumentName={instrumentName}
+            soundHistory={soundHistory}
+            soundHistoryCursor={soundHistoryCursor}
+            onRestoreSound={onRestoreSound}
           />
         </div>
       )}

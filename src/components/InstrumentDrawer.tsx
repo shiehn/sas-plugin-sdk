@@ -6,23 +6,23 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import type { InstrumentDescriptor } from '../types/plugin-sdk.types';
+import type { InstrumentDescriptor, SoundHistoryEntry } from '../types/plugin-sdk.types';
 
 // ============================================================================
 // Props
 // ============================================================================
 
 export interface InstrumentDrawerProps {
-  /** Available instrument plugins from engine scan */
-  instruments: InstrumentDescriptor[];
+  /** Available instrument plugins from engine scan (omit for a History-only drawer, e.g. drums) */
+  instruments?: InstrumentDescriptor[];
   /** Currently loaded instrument plugin ID (null = default Surge XT) */
-  currentPluginId: string | null;
+  currentPluginId?: string | null;
   /** Whether the scan is still in progress */
-  isLoading: boolean;
-  /** Called when user selects an instrument */
-  onSelect: (pluginId: string) => void;
+  isLoading?: boolean;
+  /** Called when user selects an instrument (omit to disable the "Pick" tab) */
+  onSelect?: (pluginId: string) => void;
   /** Called when user clicks refresh to re-scan plugins */
-  onRefresh: () => void;
+  onRefresh?: () => void;
   // --- Editor access (Stage 2) ---
   /** Which stage the drawer is in */
   stage?: 'instruments' | 'editor';
@@ -32,6 +32,13 @@ export interface InstrumentDrawerProps {
   onBackToInstruments?: () => void;
   /** Name of the selected instrument (for display in editor header) */
   selectedInstrumentName?: string | null;
+  // --- Sound History (the "History" tab) ---
+  /** Ordered list of sounds this track has had this session (enables the History tab). */
+  soundHistory?: readonly SoundHistoryEntry[];
+  /** Index into soundHistory of the currently-applied sound. */
+  soundHistoryCursor?: number;
+  /** Restore a sound by index; presence of this enables the History tab. */
+  onRestoreSound?: (index: number) => void;
 }
 
 // ============================================================================
@@ -39,17 +46,52 @@ export interface InstrumentDrawerProps {
 // ============================================================================
 
 export function InstrumentDrawer({
-  instruments,
-  currentPluginId,
-  isLoading,
+  instruments = [],
+  currentPluginId = null,
+  isLoading = false,
   onSelect,
   onRefresh,
   stage = 'instruments',
   onShowEditor,
   onBackToInstruments,
   selectedInstrumentName,
+  soundHistory,
+  soundHistoryCursor = -1,
+  onRestoreSound,
 }: InstrumentDrawerProps): React.ReactElement {
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'pick' | 'history'>('pick');
+
+  // "Pick" (instrument selection) is wired only when onSelect is provided —
+  // drums omit it (pinned to the sampler). "History" is wired when sound-history
+  // is provided. Show the tab strip only when BOTH exist; otherwise the drawer
+  // is single-purpose and renders that one view directly.
+  const pickEnabled = !!onSelect;
+  const historyEnabled = !!onRestoreSound;
+  const history = soundHistory ?? [];
+  const effectiveTab: 'pick' | 'history' = !pickEnabled
+    ? 'history'
+    : !historyEnabled
+      ? 'pick'
+      : activeTab;
+
+  const tabClass = (active: boolean): string =>
+    `px-2 py-0.5 text-xs rounded-sm transition-colors ${
+      active
+        ? 'bg-sas-accent/20 text-sas-accent font-medium'
+        : 'text-sas-muted hover:text-sas-accent'
+    }`;
+
+  const tabs = pickEnabled && historyEnabled ? (
+    <div className="flex items-center gap-1 border-b border-sas-border pb-1" data-testid="sdk-drawer-tabs">
+      <button type="button" onClick={() => setActiveTab('pick')} className={tabClass(activeTab === 'pick')}>
+        Pick
+      </button>
+      <button type="button" onClick={() => setActiveTab('history')} className={tabClass(activeTab === 'history')}>
+        History{history.length > 0 ? ` (${history.length})` : ''}
+      </button>
+    </div>
+  ) : null;
 
   /** Sentinel pluginId for the default Surge XT entry */
   const SURGE_XT_DEFAULT_ID = 'Surge XT';
@@ -86,10 +128,54 @@ export function InstrumentDrawer({
     return pluginId === currentPluginId;
   };
 
+  // ---- History tab (when active, or the only view for drums) ----
+  if (historyEnabled && effectiveTab === 'history') {
+    const order = history.map((_, i) => i).reverse(); // newest first
+    return (
+      <div className="flex flex-col gap-2">
+        {tabs}
+        {history.length === 0 ? (
+          <div className="text-xs text-sas-muted/60 text-center py-3" data-testid="sdk-history-empty">
+            No sounds yet — shuffle to build history.
+          </div>
+        ) : (
+          <ul className="flex flex-col gap-1 max-h-[160px] overflow-y-auto" data-testid="sdk-history-list">
+            {order.map((i) => {
+              const entry = history[i];
+              const isCurrent = i === soundHistoryCursor;
+              return (
+                <li key={i}>
+                  <button
+                    type="button"
+                    data-testid="sdk-history-entry"
+                    disabled={isCurrent}
+                    onClick={() => onRestoreSound?.(i)}
+                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded-sm border text-left text-xs transition-colors ${
+                      isCurrent
+                        ? 'border-sas-accent bg-sas-accent/20 text-sas-accent cursor-default'
+                        : 'border-sas-border bg-sas-panel-alt text-sas-muted hover:border-sas-accent hover:text-sas-accent'
+                    }`}
+                    title={isCurrent ? 'Current sound' : `Restore: ${entry.label}`}
+                  >
+                    <span className="truncate">{entry.label}</span>
+                    <span className="text-[10px] text-sas-muted/60 flex-shrink-0 ml-2">
+                      {isCurrent ? '● current' : 'restore'}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
   // ---- Stage 2: Editor Access ----
   if (stage === 'editor') {
     return (
       <div className="flex flex-col gap-2">
+        {tabs}
         {/* Back button + instrument name header */}
         <div className="flex items-center gap-2">
           <button
@@ -117,6 +203,7 @@ export function InstrumentDrawer({
   // ---- Stage 1: Instrument List (default) ----
   return (
     <div className="flex flex-col gap-2">
+      {tabs}
       {/* Search + Refresh row */}
       <div className="flex items-center gap-2">
         <input
@@ -127,7 +214,7 @@ export function InstrumentDrawer({
           className="sas-input flex-1 px-2 py-1 text-xs"
         />
         <button
-          onClick={onRefresh}
+          onClick={() => onRefresh?.()}
           disabled={isLoading}
           className="px-2 py-1 text-xs rounded-sm border border-sas-border text-sas-muted hover:text-sas-accent hover:border-sas-accent transition-colors disabled:opacity-50"
           title="Re-scan plugins"
@@ -146,7 +233,7 @@ export function InstrumentDrawer({
           {/* Permanent "Surge XT (Default)" entry — always available */}
           <button
             key="__surge-xt-default__"
-            onClick={() => onSelect(SURGE_XT_DEFAULT_ID)}
+            onClick={() => onSelect?.(SURGE_XT_DEFAULT_ID)}
             className={`flex flex-col items-start px-2 py-1.5 rounded-sm border text-left transition-colors ${
               isDefaultSelected
                 ? 'border-sas-accent bg-sas-accent/20 text-sas-accent'
@@ -167,7 +254,7 @@ export function InstrumentDrawer({
             return (
               <button
                 key={inst.pluginId}
-                onClick={() => onSelect(inst.pluginId)}
+                onClick={() => onSelect?.(inst.pluginId)}
                 className={`flex flex-col items-start px-2 py-1.5 rounded-sm border text-left transition-colors ${
                   selected
                     ? 'border-sas-accent bg-sas-accent/20 text-sas-accent'

@@ -19,6 +19,9 @@ export type {
   CreateTrackOptions,
   PluginTrackHandle,
   PluginTrackInfo,
+  ImportCandidateTrack,
+  ImportCandidateScene,
+  ListImportableTracksOptions,
   PluginSynthInfo,
   PluginTrackRuntimeState,
   TrackStateChangeListener,
@@ -61,6 +64,7 @@ export type {
   LLMToolUseResponse,
   PluginPresetData,
   ShufflePresetResult,
+  SoundHistoryEntry,
   PluginSettingsSchema,
   SettingDefinition,
   PluginSettingsStore,
@@ -144,6 +148,7 @@ export {
 // ============================================================================
 
 export { TrackRow, type SDKTrackRowProps } from './components/TrackRow';
+export { ImportTrackModal, type ImportTrackModalProps } from './components/ImportTrackModal';
 export { InstrumentDrawer, type InstrumentDrawerProps } from './components/InstrumentDrawer';
 export { VolumeSlider } from './components/VolumeSlider';
 export { PanSlider } from './components/PanSlider';
@@ -173,6 +178,11 @@ export { synthesizeCuePoints, type SynthesizeCuePointsOptions } from './componen
 // ============================================================================
 
 export { useSceneState } from './hooks/useSceneState';
+export {
+  useSoundHistory,
+  type UseSoundHistoryResult,
+  type TrackSoundHistory,
+} from './hooks/useSoundHistory';
 
 // ============================================================================
 // Constants
