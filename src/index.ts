@@ -181,6 +181,7 @@ export { useSceneState } from './hooks/useSceneState';
 export {
   useSoundHistory,
   type UseSoundHistoryResult,
+  type UseSoundHistoryOptions,
   type TrackSoundHistory,
 } from './hooks/useSoundHistory';
 

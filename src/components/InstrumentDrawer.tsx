@@ -39,6 +39,8 @@ export interface InstrumentDrawerProps {
   soundHistoryCursor?: number;
   /** Restore a sound by index; presence of this enables the History tab. */
   onRestoreSound?: (index: number) => void;
+  /** Toggle the favorite (⭐) flag on a history entry; omit to hide the star. */
+  onToggleFavorite?: (index: number) => void;
 }
 
 // ============================================================================
@@ -58,6 +60,7 @@ export function InstrumentDrawer({
   soundHistory,
   soundHistoryCursor = -1,
   onRestoreSound,
+  onToggleFavorite,
 }: InstrumentDrawerProps): React.ReactElement {
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'pick' | 'history'>('pick');
@@ -92,6 +95,30 @@ export function InstrumentDrawer({
       </button>
     </div>
   ) : null;
+
+  // Context header — the panel hosts more than preset/sample selection, so a
+  // small title + context line orients the user (active view + current sound).
+  const currentSound =
+    soundHistoryCursor >= 0 && soundHistoryCursor < history.length
+      ? history[soundHistoryCursor].label
+      : null;
+  const contextLabel =
+    historyEnabled && effectiveTab === 'history'
+      ? 'History'
+      : stage === 'editor'
+        ? 'Edit instrument'
+        : 'Pick instrument';
+  const topBar = (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-baseline justify-between gap-2" data-testid="sdk-drawer-header">
+        <span className="text-xs font-semibold text-sas-text">Sound</span>
+        <span className="text-[10px] text-sas-muted/70 truncate" title={currentSound ?? undefined}>
+          {contextLabel}{currentSound ? ` · ${currentSound}` : ''}
+        </span>
+      </div>
+      {tabs}
+    </div>
+  );
 
   /** Sentinel pluginId for the default Surge XT entry */
   const SURGE_XT_DEFAULT_ID = 'Surge XT';
@@ -133,7 +160,7 @@ export function InstrumentDrawer({
     const order = history.map((_, i) => i).reverse(); // newest first
     return (
       <div className="flex flex-col gap-2">
-        {tabs}
+        {topBar}
         {history.length === 0 ? (
           <div className="text-xs text-sas-muted/60 text-center py-3" data-testid="sdk-history-empty">
             No sounds yet — shuffle to build history.
@@ -144,13 +171,13 @@ export function InstrumentDrawer({
               const entry = history[i];
               const isCurrent = i === soundHistoryCursor;
               return (
-                <li key={i}>
+                <li key={i} className="flex items-center gap-1">
                   <button
                     type="button"
                     data-testid="sdk-history-entry"
                     disabled={isCurrent}
                     onClick={() => onRestoreSound?.(i)}
-                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded-sm border text-left text-xs transition-colors ${
+                    className={`flex-1 min-w-0 flex items-center justify-between px-2 py-1.5 rounded-sm border text-left text-xs transition-colors ${
                       isCurrent
                         ? 'border-sas-accent bg-sas-accent/20 text-sas-accent cursor-default'
                         : 'border-sas-border bg-sas-panel-alt text-sas-muted hover:border-sas-accent hover:text-sas-accent'
@@ -162,6 +189,19 @@ export function InstrumentDrawer({
                       {isCurrent ? '● current' : 'restore'}
                     </span>
                   </button>
+                  {onToggleFavorite && (
+                    <button
+                      type="button"
+                      data-testid="sdk-history-favorite"
+                      onClick={() => onToggleFavorite(i)}
+                      className={`flex-shrink-0 px-1 py-0.5 text-sm leading-none transition-colors ${
+                        entry.favorite ? 'text-yellow-400' : 'text-sas-muted/40 hover:text-yellow-400'
+                      }`}
+                      title={entry.favorite ? 'Unfavorite' : 'Favorite (keeps it from being evicted)'}
+                    >
+                      {entry.favorite ? '★' : '☆'}
+                    </button>
+                  )}
                 </li>
               );
             })}
@@ -175,7 +215,7 @@ export function InstrumentDrawer({
   if (stage === 'editor') {
     return (
       <div className="flex flex-col gap-2">
-        {tabs}
+        {topBar}
         {/* Back button + instrument name header */}
         <div className="flex items-center gap-2">
           <button
@@ -203,7 +243,7 @@ export function InstrumentDrawer({
   // ---- Stage 1: Instrument List (default) ----
   return (
     <div className="flex flex-col gap-2">
-      {tabs}
+      {topBar}
       {/* Search + Refresh row */}
       <div className="flex items-center gap-2">
         <input

@@ -1794,6 +1794,8 @@ export interface SoundHistoryEntry {
   label: string;
   /** Opaque, plugin-defined value used to re-apply this sound. */
   descriptor: unknown;
+  /** User-starred. Favorited entries are never auto-evicted by the history cap. */
+  favorite?: boolean;
 }
 
 // ============================================================================

@@ -11,7 +11,7 @@
  */
 
 import React from 'react';
-import { AlertCircle, ChevronDown, Undo2 } from 'lucide-react';
+import { AlertCircle, ChevronDown } from 'lucide-react';
 import { InstrumentDrawer } from './InstrumentDrawer';
 import type { InstrumentDescriptor, SoundHistoryEntry } from '../types/plugin-sdk.types';
 import { VolumeSlider } from './VolumeSlider';
@@ -53,10 +53,6 @@ export interface SDKTrackRowProps {
   onGenerate?: () => void;
   /** Shuffle preset (optional — omit to hide Shuffle button) */
   onShuffle?: () => void;
-  /** Undo the last shuffle — re-applies the previous sound (optional). */
-  onUndoShuffle?: () => void;
-  /** Whether there is a previous sound to step back to (controls ↩ visibility). */
-  canUndoShuffle?: boolean;
   /** Duplicate track (optional — omit to hide Copy button) */
   onCopy?: () => void;
   /** Delete track */
@@ -116,6 +112,8 @@ export interface SDKTrackRowProps {
   soundHistoryCursor?: number;
   /** Restore a sound from the History tab by index. */
   onRestoreSound?: (index: number) => void;
+  /** Toggle the favorite (⭐) flag on a history entry. */
+  onToggleFavorite?: (index: number) => void;
 }
 
 // ============================================================================
@@ -165,8 +163,7 @@ export function TrackRow({
   soundHistory,
   soundHistoryCursor,
   onRestoreSound,
-  onUndoShuffle,
-  canUndoShuffle,
+  onToggleFavorite,
 }: SDKTrackRowProps): React.ReactElement {
   const { muted: isMuted, solo: isSoloed, volume: currentVolume, pan: currentPan } = runtimeState;
 
@@ -337,23 +334,8 @@ export function TrackRow({
               x
             </button>
           </div>
-          {/* Bottom row: [↩] [Shuffle] [FX] Solo [▾] — back-arrow shown only when there's a prior sound */}
+          {/* Bottom row: [Shuffle] [FX] Solo [▾] */}
           <div className="flex gap-1 items-center">
-            {onShuffle && canUndoShuffle && onUndoShuffle && (
-              <button
-                data-testid="sdk-undo-shuffle-button"
-                onClick={onUndoShuffle}
-                disabled={isGenerating}
-                className={`px-1.5 py-0.5 rounded-sm border transition-colors ${
-                  isGenerating
-                    ? 'bg-sas-panel border-sas-border text-sas-muted/30 cursor-not-allowed'
-                    : 'bg-sas-panel-alt border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent'
-                }`}
-                title="Back to previous sound"
-              >
-                <Undo2 className="w-3 h-3" strokeWidth={2.5} />
-              </button>
-            )}
             {onShuffle && (
               <button
                 data-testid="sdk-shuffle-button"
@@ -463,6 +445,7 @@ export function TrackRow({
             soundHistory={soundHistory}
             soundHistoryCursor={soundHistoryCursor}
             onRestoreSound={onRestoreSound}
+            onToggleFavorite={onToggleFavorite}
           />
         </div>
       )}
