@@ -150,7 +150,15 @@ export {
 
 export { TrackRow, type SDKTrackRowProps } from './components/TrackRow';
 export { ImportTrackModal, type ImportTrackModalProps } from './components/ImportTrackModal';
-export { InstrumentDrawer, type InstrumentDrawerProps } from './components/InstrumentDrawer';
+export {
+  TrackDrawer,
+  type TrackDrawerProps,
+  type DrawerTab,
+  // Backwards-compatible aliases — the drawer was `InstrumentDrawer` before it
+  // grew an FX tab + Import tab and became the unified per-track drawer.
+  InstrumentDrawer,
+  type TrackDrawerProps as InstrumentDrawerProps,
+} from './components/TrackDrawer';
 export { VolumeSlider } from './components/VolumeSlider';
 export { PanSlider } from './components/PanSlider';
 export { FxToggleBar, type FxToggleBarProps } from './components/FxToggleBar';

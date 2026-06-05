@@ -12,11 +12,10 @@
 
 import React from 'react';
 import { AlertCircle, ChevronDown } from 'lucide-react';
-import { InstrumentDrawer } from './InstrumentDrawer';
+import { TrackDrawer, type DrawerTab } from './TrackDrawer';
 import type { InstrumentDescriptor, SoundHistoryEntry } from '../types/plugin-sdk.types';
 import { VolumeSlider } from './VolumeSlider';
 import { PanSlider } from './PanSlider';
-import { FxToggleBar } from './FxToggleBar';
 import { SorceryProgressBar } from './SorceryProgressBar';
 import type { TrackFxDetailState, FxCategory } from '../types/fx-toggle.types';
 
@@ -33,8 +32,12 @@ export interface SDKTrackRowProps {
   runtimeState: { muted: boolean; solo: boolean; volume: number; pan: number };
   /** FX category states */
   fxDetailState: TrackFxDetailState;
-  /** FX panel visibility */
-  fxDrawerOpen: boolean;
+  /** Whether the unified track drawer is open. */
+  drawerOpen: boolean;
+  /** Which tab the drawer is showing. */
+  drawerTab: DrawerTab;
+  /** Switch the active drawer tab (tab-strip clicks). Omit for single-tab panels (e.g. loops = FX only). */
+  onTabChange?: (tab: DrawerTab) => void;
   /** Generation in progress */
   isGenerating?: boolean;
   /** Auth state */
@@ -84,10 +87,8 @@ export interface SDKTrackRowProps {
   instrumentName?: string | null;
   /** Whether the current instrument plugin is missing from the system */
   instrumentMissing?: boolean;
-  /** Whether the instrument drawer is open */
-  instrumentDrawerOpen?: boolean;
-  /** Toggle the instrument drawer */
-  onToggleInstrumentDrawer?: () => void;
+  /** Open/close the drawer to a non-FX tab (the ▾ button). Omit to hide it. */
+  onToggleDrawer?: () => void;
   /** Available instrument plugins for the drawer */
   availableInstruments?: InstrumentDescriptor[];
   /** Currently loaded instrument plugin ID */
@@ -99,8 +100,8 @@ export interface SDKTrackRowProps {
   /** Re-scan for instruments */
   onRefreshInstruments?: () => void;
   // --- Instrument Editor (Stage 2) ---
-  /** Which stage the instrument drawer is in */
-  instrumentDrawerStage?: 'instruments' | 'editor';
+  /** Pick-tab sub-view: native plugin editor instead of the instrument grid. */
+  editorStage?: boolean;
   /** Called when user clicks "Open Editor" */
   onShowEditor?: () => void;
   /** Called when user wants to go back from editor view */
@@ -129,7 +130,9 @@ export function TrackRow({
   prompt,
   runtimeState,
   fxDetailState,
-  fxDrawerOpen,
+  drawerOpen,
+  drawerTab,
+  onTabChange,
   isGenerating = false,
   isAuthenticated = false,
   error,
@@ -154,14 +157,13 @@ export function TrackRow({
   accentColor = '#A78BFA',
   instrumentName,
   instrumentMissing,
-  instrumentDrawerOpen,
-  onToggleInstrumentDrawer,
+  onToggleDrawer,
   availableInstruments,
   currentInstrumentPluginId,
   onInstrumentSelect,
   instrumentsLoading,
   onRefreshInstruments,
-  instrumentDrawerStage,
+  editorStage,
   onShowEditor,
   onBackToInstruments,
   soundHistory,
@@ -179,6 +181,11 @@ export function TrackRow({
   const hasFxActive = Object.values(fxDetailState).some(
     (d: { enabled: boolean }) => d.enabled
   );
+
+  // The two row buttons open the SAME unified drawer to different tabs:
+  // FX → the 'fx' tab; ▾ → a non-FX tab (History/Pick/Import).
+  const fxTabOpen = drawerOpen && drawerTab === 'fx';
+  const soundTabOpen = drawerOpen && drawerTab !== 'fx';
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter' && !e.shiftKey && onGenerate) {
@@ -371,13 +378,13 @@ export function TrackRow({
                 className={`w-14 py-0.5 rounded-sm text-xs font-medium transition-colors border ${
                   isGenerating
                     ? 'bg-sas-panel border-sas-border text-sas-muted/50 cursor-not-allowed'
-                    : fxDrawerOpen
+                    : fxTabOpen
                       ? 'bg-sas-accent border-sas-accent text-sas-bg'
                       : hasFxActive
                         ? 'bg-sas-accent/20 border-sas-accent text-sas-accent hover:bg-sas-accent hover:text-sas-bg'
                         : 'bg-sas-panel-alt border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent'
                 }`}
-                title={fxDrawerOpen ? 'Hide FX controls' : 'Show FX controls'}
+                title={fxTabOpen ? 'Hide FX controls' : 'Show FX controls'}
               >
                 FX
               </button>
@@ -397,15 +404,15 @@ export function TrackRow({
             >
               S
             </button>
-            {onToggleInstrumentDrawer && (
+            {onToggleDrawer && (
               <button
                 data-testid="sdk-plugin-button"
-                onClick={onToggleInstrumentDrawer}
+                onClick={onToggleDrawer}
                 disabled={isGenerating}
                 className={`px-1.5 py-0.5 text-xs font-bold rounded transition-colors ${
                   isGenerating
                     ? 'bg-sas-panel text-sas-muted/50 cursor-not-allowed'
-                    : instrumentDrawerOpen
+                    : soundTabOpen
                       ? 'bg-sas-accent border-sas-accent text-sas-bg'
                       : instrumentMissing
                         ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/40'
@@ -420,31 +427,29 @@ export function TrackRow({
         </div>
       </div>
 
-      {/* FX Drawer */}
-      {fxDrawerOpen && !instrumentDrawerOpen && (
-        <div data-testid="sdk-fx-drawer" className="border border-t-0 border-sas-border bg-sas-bg rounded-b-sm px-3 py-2 max-h-[180px] overflow-y-auto">
-          <FxToggleBar
+      {/* Unified track drawer — one drawer, contextual tabs (FX / Pick / History / Import).
+          The FX button opens it to 'fx'; the ▾ button to a non-FX tab. Which tabs
+          appear is computed inside TrackDrawer from the callbacks provided. */}
+      {drawerOpen && (
+        <div
+          data-testid="sdk-track-drawer"
+          className="border border-t-0 border-sas-border bg-sas-bg rounded-b-sm px-3 py-2 max-h-[260px] overflow-y-auto"
+        >
+          <TrackDrawer
+            activeTab={drawerTab}
+            onTabChange={onTabChange}
             trackId={track.id}
             fxState={fxDetailState}
-            onToggle={(_trackId: string, category: FxCategory, enabled: boolean) => onFxToggle?.(category, enabled)}
-            onPresetChange={(_trackId: string, category: FxCategory, presetIndex: number) => onFxPresetChange?.(category, presetIndex)}
-            onDryWetChange={(_trackId: string, category: FxCategory, value: number) => onFxDryWetChange?.(category, value)}
-            disabled={isGenerating}
-          />
-        </div>
-      )}
-
-      {/* Instrument Drawer */}
-      {instrumentDrawerOpen && !fxDrawerOpen &&
-        ((availableInstruments && onInstrumentSelect && onRefreshInstruments) || onRestoreSound || onImportSound) && (
-        <div data-testid="sdk-instrument-drawer" className="border border-t-0 border-sas-border bg-sas-bg rounded-b-sm px-3 py-2">
-          <InstrumentDrawer
+            onFxToggle={onFxToggle}
+            onFxPresetChange={onFxPresetChange}
+            onFxDryWetChange={onFxDryWetChange}
+            fxDisabled={isGenerating}
             instruments={availableInstruments}
             currentPluginId={currentInstrumentPluginId ?? null}
             isLoading={instrumentsLoading ?? false}
             onSelect={onInstrumentSelect}
             onRefresh={onRefreshInstruments}
-            stage={instrumentDrawerStage}
+            editorStage={editorStage}
             onShowEditor={onShowEditor}
             onBackToInstruments={onBackToInstruments}
             selectedInstrumentName={instrumentName}
