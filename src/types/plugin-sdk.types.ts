@@ -308,6 +308,22 @@ export interface PluginHost {
   duplicateTrack(trackId: string): Promise<PluginTrackHandle>;
 
   /**
+   * Persist this plugin's track row order for the active scene. Pass the stable
+   * track dbIds ({@link PluginTrackHandle.dbId}) in the desired top-to-bottom
+   * order. Reload-safe — {@link getPluginTracks} returns tracks in this order
+   * across scene switches and project reopen.
+   *
+   * Per-panel and decoupled from the engine-synced global track order, so
+   * reordering one panel never disturbs other plugins' tracks. Tracks omitted
+   * from the list (e.g. newly added or duplicated) keep their natural order at
+   * the end. Pairs with the {@link useTrackReorder} hook, which drives the
+   * drag-and-drop UI and calls this on drop.
+   *
+   * @since SDK 2.16.0
+   */
+  reorderTracks(orderedTrackIds: readonly string[]): Promise<void>;
+
+  /**
    * Return the canonical list of valid role tokens that the host's
    * classifier and UI understand. Plugins should use this list when
    * building LLM prompts or validating role values before calling
@@ -367,6 +383,19 @@ export interface PluginHost {
    * Wraps MidiProcessor: quantize -> swing -> scale -> register -> overlaps -> humanize.
    */
   postProcessMidi(notes: PluginMidiNote[], options: PostProcessOptions): Promise<PluginMidiNote[]>;
+
+  /**
+   * Read a track's current MIDI notes for in-place editing (e.g. a piano
+   * roll). Returns the track's clips with beat-based notes; an empty `clips`
+   * array means the track has no MIDI. Reads LIVE engine state (NOT the DB),
+   * so it reflects unsaved generator output too and needs no project_id
+   * scoping — do not "fix" this into a DB query.
+   *
+   * Ownership-gated like {@link writeMidiClip}. Optional so a plugin built
+   * against this SDK still loads on an older host — callers MUST null-check.
+   * @since SDK 2.15.0
+   */
+  readMidiNotes?(trackId: string): Promise<ReadMidiResult>;
 
   // --- Audio Operations ---
 
@@ -1416,6 +1445,31 @@ export interface MidiWriteResult {
   notesInserted: number;
   /** Actual bars covered */
   bars: number;
+}
+
+/**
+ * One clip returned by {@link PluginHost.readMidiNotes}. `endTime - startTime`
+ * (seconds) is the clip's loop span; round-trip it back into
+ * {@link MidiClipData} on save so an edit never changes the clip length.
+ * @since SDK 2.15.0
+ */
+export interface ReadMidiClip {
+  /** Clip start in seconds (engine timeline). */
+  startTime: number;
+  /** Clip end in seconds. Loop span = endTime - startTime. */
+  endTime: number;
+  /** Beat-based notes, identical shape to {@link MidiClipData.notes}. */
+  notes: PluginMidiNote[];
+}
+
+/**
+ * Result of {@link PluginHost.readMidiNotes}: every clip on the track. Drum /
+ * instrument / synth tracks are single-clip, so callers normally use
+ * `clips[0]`; the array form mirrors the engine and is future-proof.
+ * @since SDK 2.15.0
+ */
+export interface ReadMidiResult {
+  clips: ReadMidiClip[];
 }
 
 /**

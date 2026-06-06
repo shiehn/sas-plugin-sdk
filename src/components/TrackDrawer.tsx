@@ -19,22 +19,24 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import type { InstrumentDescriptor, SoundHistoryEntry } from '../types/plugin-sdk.types';
+import type { InstrumentDescriptor, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
 import type { FxCategory, TrackFxDetailState } from '../types/fx-toggle.types';
 import { FxToggleBar } from './FxToggleBar';
+import { PianoRollEditor } from './PianoRollEditor';
 
 // ============================================================================
 // Tabs
 // ============================================================================
 
 /** The contextual tabs a track drawer can show, in display order. */
-export type DrawerTab = 'fx' | 'pick' | 'history' | 'import';
+export type DrawerTab = 'fx' | 'pick' | 'history' | 'import' | 'edit';
 
 const TAB_LABELS: Record<DrawerTab, string> = {
   fx: 'FX',
   pick: 'Pick',
   history: 'History',
   import: 'Import',
+  edit: 'Edit',
 };
 
 // ============================================================================
@@ -89,6 +91,20 @@ export interface TrackDrawerProps {
   onImportSound?: () => void;
   /** Button label, e.g. "Import Sample" (drums/instruments) or "Import Preset" (synths). */
   importSoundLabel?: string;
+
+  // --- Edit tab (enabled when onNotesChange is provided) ---
+  /** Current MIDI notes for the piano-roll editor. */
+  editNotes?: readonly PluginMidiNote[];
+  /** Persist edited notes; PRESENCE of this callback enables the Edit tab. */
+  onNotesChange?: (notes: PluginMidiNote[]) => void;
+  /** Scene length in bars (piano-roll grid width). Default 4. */
+  editBars?: number;
+  /** Scene BPM (piano-roll audition timing). Default 120. */
+  editBpm?: number;
+  /** Snap step in quarter notes for the piano roll (default 0.25). */
+  editSnap?: number;
+  /** Optional single-note preview when the user adds a note. */
+  onAuditionNote?: (pitch: number, velocity: number, durationMs: number) => void;
 }
 
 // ============================================================================
@@ -119,6 +135,12 @@ export function TrackDrawer({
   onToggleFavorite,
   onImportSound,
   importSoundLabel,
+  editNotes,
+  onNotesChange,
+  editBars,
+  editBpm,
+  editSnap,
+  onAuditionNote,
 }: TrackDrawerProps): React.ReactElement {
   // --- Hooks (MUST stay above every early return) ---
   const [search, setSearch] = useState('');
@@ -127,6 +149,7 @@ export function TrackDrawer({
   const pickEnabled = !!onSelect;
   const historyEnabled = !!onRestoreSound;
   const importEnabled = !!onImportSound;
+  const editEnabled = !!onNotesChange;
 
   const enabledTabs = useMemo((): DrawerTab[] => {
     const tabs: DrawerTab[] = [];
@@ -134,8 +157,9 @@ export function TrackDrawer({
     if (pickEnabled) tabs.push('pick');
     if (historyEnabled) tabs.push('history');
     if (importEnabled) tabs.push('import');
+    if (editEnabled) tabs.push('edit');
     return tabs;
-  }, [fxEnabled, pickEnabled, historyEnabled, importEnabled]);
+  }, [fxEnabled, pickEnabled, historyEnabled, importEnabled, editEnabled]);
 
   /** Sentinel pluginId for the default Surge XT entry */
   const SURGE_XT_DEFAULT_ID = 'Surge XT';
@@ -216,6 +240,23 @@ export function TrackDrawer({
         )}
       </div>
     ) : null;
+
+  // ---- Edit tab (piano-roll MIDI editor) ----
+  if (effectiveTab === 'edit') {
+    return (
+      <div className="flex flex-col gap-2" data-testid="sdk-drawer-edit">
+        {header}
+        <PianoRollEditor
+          notes={editNotes ?? []}
+          onChange={onNotesChange ?? ((): void => {})}
+          bars={editBars ?? 4}
+          bpm={editBpm ?? 120}
+          snap={editSnap}
+          onAuditionNote={onAuditionNote}
+        />
+      </div>
+    );
+  }
 
   // ---- FX tab ----
   if (effectiveTab === 'fx') {

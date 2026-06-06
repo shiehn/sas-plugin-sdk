@@ -31,6 +31,8 @@ export type {
   MidiClipData,
   PluginMidiNote,
   MidiWriteResult,
+  ReadMidiClip,
+  ReadMidiResult,
   ExportMidiBundleOptions,
   ExportMidiBundleResult,
   PostProcessOptions,
@@ -150,6 +152,7 @@ export {
 
 export { TrackRow, type SDKTrackRowProps } from './components/TrackRow';
 export { ImportTrackModal, type ImportTrackModalProps } from './components/ImportTrackModal';
+export { ConfirmDialog, type ConfirmDialogProps } from './components/ConfirmDialog';
 export {
   TrackDrawer,
   type TrackDrawerProps,
@@ -159,6 +162,21 @@ export {
   InstrumentDrawer,
   type TrackDrawerProps as InstrumentDrawerProps,
 } from './components/TrackDrawer';
+export {
+  PianoRollEditor,
+  type PianoRollEditorProps,
+  PX_PER_BEAT,
+  ROW_HEIGHT,
+  GUTTER_W,
+  DRAG_DEAD_ZONE,
+  RESIZE_HANDLE_PX,
+  pxToCell,
+  cellToPx,
+  resizeNoteDuration,
+  centerScrollTop,
+  transposeNotes,
+  pitchToName,
+} from './components/PianoRollEditor';
 export { VolumeSlider } from './components/VolumeSlider';
 export { PanSlider } from './components/PanSlider';
 export { FxToggleBar, type FxToggleBarProps } from './components/FxToggleBar';
@@ -193,6 +211,13 @@ export {
   type UseSoundHistoryOptions,
   type TrackSoundHistory,
 } from './hooks/useSoundHistory';
+export {
+  useTrackReorder,
+  moveItem,
+  type UseTrackReorderOptions,
+  type UseTrackReorderResult,
+  type TrackRowDragProps,
+} from './hooks/useTrackReorder';
 
 // ============================================================================
 // Constants

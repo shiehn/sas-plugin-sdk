@@ -11,9 +11,11 @@
  */
 
 import React from 'react';
-import { AlertCircle, ChevronDown } from 'lucide-react';
+import { AlertCircle, ChevronDown, GripVertical } from 'lucide-react';
 import { TrackDrawer, type DrawerTab } from './TrackDrawer';
-import type { InstrumentDescriptor, SoundHistoryEntry } from '../types/plugin-sdk.types';
+import { ConfirmDialog } from './ConfirmDialog';
+import type { InstrumentDescriptor, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
+import type { TrackRowDragProps } from '../hooks/useTrackReorder';
 import { VolumeSlider } from './VolumeSlider';
 import { PanSlider } from './PanSlider';
 import { SorceryProgressBar } from './SorceryProgressBar';
@@ -119,6 +121,23 @@ export interface SDKTrackRowProps {
   onImportSound?: () => void;
   /** Sound-import button label ("Import Sample" / "Import Preset"). */
   importSoundLabel?: string;
+  // --- Edit tab (piano-roll MIDI editor) ---
+  /** Current MIDI notes for the piano-roll editor (the 'edit' tab). */
+  editNotes?: readonly PluginMidiNote[];
+  /** Persist edited notes; PRESENCE of this callback enables the Edit tab. */
+  onNotesChange?: (notes: PluginMidiNote[]) => void;
+  /** Scene length in bars (piano-roll grid width). */
+  editBars?: number;
+  /** Scene BPM (piano-roll audition timing). */
+  editBpm?: number;
+  /** Snap step in quarter notes for the piano roll (default 0.25). */
+  editSnap?: number;
+  /** Optional single-note preview when the user adds a note. */
+  onAuditionNote?: (pitch: number, velocity: number, durationMs: number) => void;
+  // --- Drag-to-reorder ---
+  /** Drag props from {@link useTrackReorder}. When present, renders the grip
+   *  handle and makes the row a drop target. Omit for non-reorderable lists. */
+  drag?: TrackRowDragProps;
 }
 
 // ============================================================================
@@ -172,8 +191,19 @@ export function TrackRow({
   onToggleFavorite,
   onImportSound,
   importSoundLabel,
+  editNotes,
+  onNotesChange,
+  editBars,
+  editBpm,
+  editSnap,
+  onAuditionNote,
+  drag,
 }: SDKTrackRowProps): React.ReactElement {
   const { muted: isMuted, solo: isSoloed, volume: currentVolume, pan: currentPan } = runtimeState;
+
+  // Guard the (irreversible) delete behind a confirmation modal — the bare "x"
+  // was one stray click away from losing a track's MIDI + sound.
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
 
   // "Needs generation" = has prompt, no MIDI yet, not currently generating
   const needsGeneration = !!(prompt?.trim() && !hasMidi && !isGenerating);
@@ -204,15 +234,30 @@ export function TrackRow({
     : 'border-sas-border';
 
   return (
-    <div data-testid="sdk-track-row-wrapper" className="w-full">
+    <div data-testid="sdk-track-row-wrapper" className="w-full" {...(drag?.rowProps ?? {})}>
       <div
         data-testid="sdk-track-row"
-        className={`relative flex items-stretch gap-1 p-2 rounded-sm border w-full overflow-hidden ${borderClass} bg-sas-panel-alt`}
+        className={`relative flex items-stretch gap-1 p-2 rounded-sm border w-full overflow-hidden ${borderClass} bg-sas-panel-alt ${drag?.isDragging ? 'opacity-40' : ''} ${drag?.isDragTarget ? 'ring-2 ring-sas-accent ring-inset' : ''}`}
         style={{
           borderLeftColor: needsGeneration ? '#f59e0b' : borderColorStyle,
           borderLeftWidth: '3px',
         }}
       >
+        {/* Drag-to-reorder grip — only when reorder is enabled. z-30 keeps it
+            above the generating overlay; only the grip is draggable, so the
+            row's inputs and sliders stay interactive. */}
+        {drag && (
+          <div
+            data-testid="sdk-drag-handle"
+            {...drag.handleProps}
+            className="flex-shrink-0 self-stretch flex items-center -ml-0.5 pr-0.5 text-sas-muted/40 hover:text-sas-muted cursor-grab active:cursor-grabbing relative z-30"
+            title="Drag to reorder"
+            aria-label="Drag to reorder track"
+          >
+            <GripVertical className="w-3.5 h-3.5" strokeWidth={2} />
+          </div>
+        )}
+
         {/* Generating progress overlay - stops before buttons (right-44) */}
         {isGenerating && (
           <div className="absolute left-0 top-0 bottom-0 right-44 z-20">
@@ -340,7 +385,7 @@ export function TrackRow({
             </button>
             <button
               data-testid="sdk-delete-button"
-              onClick={onDelete}
+              onClick={() => setConfirmDelete(true)}
               className="text-sas-danger/70 hover:text-sas-danger px-1 py-0.5 transition-colors text-sm"
               title="Delete track"
             >
@@ -459,9 +504,33 @@ export function TrackRow({
             onToggleFavorite={onToggleFavorite}
             onImportSound={onImportSound}
             importSoundLabel={importSoundLabel}
+            editNotes={editNotes}
+            onNotesChange={onNotesChange}
+            editBars={editBars}
+            editBpm={editBpm}
+            editSnap={editSnap}
+            onAuditionNote={onAuditionNote}
           />
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete track?"
+        message={
+          <>
+            <span className="text-sas-text">{track.name?.trim() || 'This track'}</span> will be
+            permanently removed from this scene. This cannot be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        onConfirm={() => {
+          setConfirmDelete(false);
+          onDelete();
+        }}
+        onCancel={() => setConfirmDelete(false)}
+        testIdPrefix="track-delete-confirm"
+      />
     </div>
   );
 }
