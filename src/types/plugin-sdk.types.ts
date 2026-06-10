@@ -547,6 +547,15 @@ export interface PluginHost {
   /** Get the active scene ID. Null if no scene is active. */
   getActiveSceneId(): string | null;
 
+  /**
+   * Get the bound project's DB id. Null when no project is bound.
+   * Optional — older hosts and the renderer-side host proxy may omit it;
+   * callers MUST feature-check. Used e.g. to detect project switches for
+   * per-project conversation persistence.
+   * @since SDK 2.18.0
+   */
+  getProjectId?(): string | null;
+
   /** Get list of all scenes in the project. */
   getSceneList(): Promise<PluginSceneInfo[]>;
 
@@ -658,9 +667,18 @@ export interface PluginHost {
    * `'scene'` to hide project-level tools they shouldn't call. When omitted,
    * every tool regardless of scope is returned.
    *
+   * `opts.includeDeferred` (since SDK 2.18.0) opts in to tools flagged with
+   * `deferLoading` (progressive disclosure). Default `false` mirrors
+   * `/api/v1/actions` — the curated core surface. Used by curation layers
+   * that promote specific deferred/project tools onto an agent's default
+   * declaration set.
+   *
    * @since SDK 1.2.0
    */
-  listAppTools(opts?: { scope?: 'scene' | 'project' }): Promise<PluginAppTool[]>;
+  listAppTools(opts?: {
+    scope?: 'scene' | 'project';
+    includeDeferred?: boolean;
+  }): Promise<PluginAppTool[]>;
 
   /**
    * Execute a host app tool by name. Delegates to the in-process
@@ -675,11 +693,17 @@ export interface PluginHost {
    * scene. That keeps a scene-bound caller from accidentally targeting
    * another scene.
    *
+   * `opts.provenance` (since SDK 2.18.0) stamps the originating actor onto
+   * every domain event this call emits — pass `'agent'` from autonomous
+   * agent loops so the UI orchestrator can gate auto-navigation, `'user'`
+   * when proxying a direct user gesture. Omitted = `'system'`.
+   *
    * @since SDK 1.2.0
    */
   executeAppTool(
     name: string,
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    opts?: { provenance?: 'agent' | 'user' }
   ): Promise<PluginAppToolResult>;
 
   /**
@@ -2284,6 +2308,14 @@ export interface PluginAppTool {
   inputSchema: PluginAppToolInputSchema;
   /** `'scene'` = safe for scene-scoped callers. `'project'` = cross-scene. */
   scope?: 'scene' | 'project';
+  /**
+   * `true` = the operation cannot be undone via the host's checkpoint/undo
+   * system (project delete, disk overwrite, external export, …). The host
+   * gates such calls behind a user-approval flow when invoked with agent
+   * provenance; agent UIs may also surface the flag (e.g. ⚠ in a tool list).
+   * @since SDK 2.18.0
+   */
+  irreversible?: boolean;
 }
 
 /** Result shape returned by `PluginHost.executeAppTool`. */
