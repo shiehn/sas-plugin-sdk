@@ -88,7 +88,7 @@ export function ConfirmDialog({
 
         {/* Body */}
         <div
-          className="px-4 py-3 text-xs text-sas-muted leading-relaxed"
+          className="px-4 py-3 text-xs text-sas-muted leading-relaxed break-words"
           data-testid={`${testIdPrefix}-message`}
         >
           {message}
