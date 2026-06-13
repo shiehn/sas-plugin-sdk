@@ -32,6 +32,11 @@ export interface SDKTrackRowProps {
   prompt?: string;
   /** Playback state */
   runtimeState: { muted: boolean; solo: boolean; volume: number; pan: number };
+  /** True when ANOTHER track is soloed, so this (non-soloed) track is currently
+   *  silenced. Renders the row dimmed while leaving its Mute button UNLIT — the
+   *  engine's effective-mute model silences it without touching user-mute. Purely
+   *  visual; does not change mute/solo state. */
+  soloedOut?: boolean;
   /** FX category states */
   fxDetailState: TrackFxDetailState;
   /** Whether the unified track drawer is open. */
@@ -148,6 +153,7 @@ export function TrackRow({
   track,
   prompt,
   runtimeState,
+  soloedOut = false,
   fxDetailState,
   drawerOpen,
   drawerTab,
@@ -272,8 +278,14 @@ export function TrackRow({
           </div>
         )}
 
-        {/* Left: Content area (prompt input or custom content slot) with track name, volume, and pan underneath */}
-        <div className="flex flex-col flex-1 min-w-0 relative z-10">
+        {/* Left: Content area (prompt input or custom content slot) with track name, volume, and pan underneath.
+            Dimmed when soloed-out (silenced by another track's solo); the Mute/Solo
+            buttons below stay full-opacity and interactive so the user can un-solo. */}
+        <div
+          data-testid="sdk-track-content"
+          className={`flex flex-col flex-1 min-w-0 relative z-10 transition-opacity ${soloedOut ? 'opacity-40' : ''}`}
+          title={soloedOut ? 'Silenced — another track is soloed' : undefined}
+        >
           {contentSlot ? contentSlot : onPromptChange ? (
             <input
               type="text"

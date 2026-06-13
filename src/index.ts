@@ -205,6 +205,7 @@ export { synthesizeCuePoints, type SynthesizeCuePointsOptions } from './componen
 // ============================================================================
 
 export { useSceneState } from './hooks/useSceneState';
+export { useAnySolo } from './hooks/useAnySolo';
 export {
   useSoundHistory,
   type UseSoundHistoryResult,

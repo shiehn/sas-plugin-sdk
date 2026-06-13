@@ -45,6 +45,14 @@ export interface ImportTrackModalProps {
   mode?: 'track' | 'sound';
   /** Sound-mode pick handler — required when `mode='sound'`. */
   onPick?: (sel: { sourceTrackDbId: string; trackName: string; sceneName: string }) => void | Promise<void>;
+  /**
+   * Cross-panel port handler (track mode). When provided, the modal also lists
+   * the ACTIVE scene's tracks owned by OTHER panels as a `sameScene` group —
+   * shown first and selected by default — and routes a pick there to this
+   * callback instead of `importTrack`. The panel re-sounds the part on its own
+   * instrument (create track → copy MIDI → load native sound). @since SDK 2.20.0
+   */
+  onPortTrack?: (sel: { sourceTrackDbId: string; trackName: string; role?: string }) => void | Promise<void>;
 }
 
 type LoadState =
@@ -61,6 +69,7 @@ export function ImportTrackModal({
   testIdPrefix = 'import-track',
   mode = 'track',
   onPick,
+  onPortTrack,
 }: ImportTrackModalProps): React.ReactElement | null {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
@@ -73,12 +82,19 @@ export function ImportTrackModal({
     }
     setLoad({ status: 'loading' });
     try {
-      const scenes = await host.listImportableTracks();
+      // Track mode with a port handler also wants the "this scene — other
+      // panels" group (cross-panel re-sound source); plain/sound flows don't.
+      const wantsPort = mode === 'track' && !!onPortTrack;
+      const scenes = await host.listImportableTracks(wantsPort ? { includeSameScene: true } : undefined);
       setLoad({ status: 'ready', scenes });
+      // Default to the same-scene group when present so the user lands on
+      // cross-panel tracks (they can ← back to pick another scene).
+      const sameScene = scenes.find((s) => s.sameScene);
+      if (sameScene) setSelectedSceneId(sameScene.sceneId);
     } catch (err: unknown) {
       setLoad({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load scenes.' });
     }
-  }, [host]);
+  }, [host, mode, onPortTrack]);
 
   // Fetch candidates each time the modal opens; reset selection on close.
   useEffect(() => {
@@ -100,7 +116,27 @@ export function ImportTrackModal({
   }, [open, onClose]);
 
   const handleImport = useCallback(
-    async (track: ImportCandidateTrack, sourceSceneId: string, sceneName: string): Promise<void> => {
+    async (
+      track: ImportCandidateTrack,
+      sourceSceneId: string,
+      sceneName: string,
+      isSameScene: boolean,
+    ): Promise<void> => {
+      // Same-scene, other-panel pick: re-sound the part on THIS panel's
+      // instrument. The panel creates a track, copies the MIDI, and loads its
+      // own sound (see onPortTrack) — never a faithful copy / importTrack.
+      if (isSameScene && onPortTrack) {
+        if (!track.importable) return;
+        setImportingTrackId(track.trackId);
+        try {
+          await onPortTrack({ sourceTrackDbId: track.dbId, trackName: track.name, role: track.role });
+          onClose();
+        } catch (err: unknown) {
+          host.showToast?.('error', err instanceof Error ? err.message : 'Import failed');
+          setImportingTrackId(null);
+        }
+        return;
+      }
       // Sound mode: ignore the gate and hand the pick back to the panel, which
       // reads the source sound via host.getTrackSound and applies it itself.
       if (mode === 'sound') {
@@ -125,7 +161,7 @@ export function ImportTrackModal({
         setImportingTrackId(null);
       }
     },
-    [host, onImported, onClose, mode, onPick],
+    [host, onImported, onClose, mode, onPick, onPortTrack],
   );
 
   if (!open) return null;
@@ -228,7 +264,7 @@ export function ImportTrackModal({
                       }`}
                       disabled={disabled}
                       title={gated ? track.disabledReason : undefined}
-                      onClick={() => void handleImport(track, selectedScene.sceneId, selectedScene.sceneName)}
+                      onClick={() => void handleImport(track, selectedScene.sceneId, selectedScene.sceneName, !!selectedScene.sameScene)}
                       data-testid={`${testIdPrefix}-track`}
                       data-importable={mode === 'sound' || track.importable ? 'true' : 'false'}
                     >

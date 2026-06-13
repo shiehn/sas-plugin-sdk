@@ -276,6 +276,11 @@ export interface PluginHost {
   /** Set track solo state. Only works on owned tracks. */
   setTrackSolo(trackId: string, solo: boolean): Promise<void>;
 
+  /** Whether ANY track in the project is currently soloed (across all panels).
+   *  Lets a panel dim its non-soloed rows (the engine silences them via the
+   *  effective-mute model). Read-only; not ownership-scoped. */
+  isAnySoloActive(): Promise<boolean>;
+
   /** Rename a track. Only works on owned tracks. */
   setTrackName(trackId: string, name: string): Promise<void>;
 
@@ -563,8 +568,10 @@ export interface PluginHost {
    * Enumerate importable track candidates from OTHER scenes, scoped to this
    * plugin's track type (derived from the plugin id). Each candidate is
    * annotated with `importable` + `disabledReason` — the host computes the
-   * harmonic/length/tempo gate so the UI only renders it. The active scene is
-   * always excluded; scenes with no candidate of this type are omitted.
+   * harmonic/length/tempo gate so the UI only renders it. By default the active
+   * scene is excluded; pass `includeSameScene` to also surface the active
+   * scene's MIDI tracks owned by OTHER panels (the cross-panel re-sound source).
+   * Scenes with no candidate of this type are omitted.
    *
    * Optional so a plugin built against this SDK still loads on an older host —
    * callers MUST null-check and hide the affordance when absent.
@@ -593,6 +600,20 @@ export interface PluginHost {
    * @since SDK 2.14.0
    */
   getTrackSound?(sourceTrackDbId: string): Promise<TrackSoundSnapshot | null>;
+
+  /**
+   * Read a source track's persisted MIDI by its DB row id — the cross-panel
+   * READ half of "re-sound a part on a different instrument". Unlike
+   * `readMidiNotes` (engine-read, ownership-gated), this reads the DB and is
+   * NOT ownership-gated, so a panel can pull a part out of a track owned by a
+   * DIFFERENT panel in the same scene (the selector is
+   * `ImportCandidateTrack.dbId`, e.g. a `sameScene` candidate). Notes are
+   * beat-based, identical shape to `readMidiNotes`; the loop span comes from the
+   * source scene. Returns `{ clips: [] }` when the track has no MIDI. Optional —
+   * callers MUST null-check (see `listImportableTracks`).
+   * @since SDK 2.20.0
+   */
+  readImportableTrackMidi?(sourceTrackDbId: string): Promise<ReadMidiResult>;
 
   // --- Transport & Playback Events ---
 
@@ -836,6 +857,33 @@ export interface PluginHost {
    * @since SDK 2.12.0
    */
   getSamplePackInfo?(packId: string): Promise<SamplePackPublicInfo | null>;
+
+  /**
+   * Per-pack roots of the USER's imported sample packs for `kind`. Each root
+   * is laid out exactly like the corresponding stock pack (drums:
+   * `<root>/<role>/<file>.wav` + `.txt` sidecars; instruments:
+   * `<root>/<category>/<id>/manifest.json`), so resolvers scan them as
+   * additional roots alongside `getSamplePackRoot`. `[]` when nothing is
+   * imported. User content lives under `<userData>/user-samples/` — strictly
+   * separate on disk; stock pack installs never touch it.
+   *
+   * Optional for older-host compat: feature-check
+   * (`host.getUserSampleRoots?.(...)`) and treat absence as `[]`.
+   *
+   * @since SDK 2.20.0
+   */
+  getUserSampleRoots?(kind: 'drums' | 'instruments'): Promise<string[]>;
+
+  /**
+   * Ask the host app to open its sample-import wizard targeting `kind`.
+   * Fire-and-forget; renderer-hosted plugins only (the wizard is an app-level
+   * modal — the main-process host no-ops). Library changes land as
+   * `onSamplePackProgress` events with packId `user:<kind>` and
+   * `status: 'complete'`, so subscribe to that to refresh.
+   *
+   * @since SDK 2.20.0
+   */
+  openSampleImportWizard?(kind: 'drums' | 'instruments'): void;
 
   // --- Deck playback ---
   //
@@ -1359,6 +1407,14 @@ export interface ImportCandidateScene {
   sceneName: string;
   /** Candidate tracks of this panel's type (may include disabled ones). */
   tracks: ImportCandidateTrack[];
+  /**
+   * True for the synthetic "this scene — other panels" entry: the ACTIVE
+   * scene's MIDI tracks owned by OTHER panels. Importing one re-sounds the part
+   * on the calling panel's instrument (via `readImportableTrackMidi` +
+   * `writeMidiClip`) rather than faithfully copying it. Absent/false for
+   * ordinary cross-scene entries. @since SDK 2.20.0
+   */
+  sameScene?: boolean;
 }
 
 /**
@@ -1380,6 +1436,12 @@ export interface ListImportableTracksOptions {
    * panels normally pass nothing.
    */
   family?: 'midi' | 'audio' | 'sample';
+  /**
+   * When true, prepend the active scene's MIDI tracks owned by OTHER panels as a
+   * `sameScene` entry (the cross-panel re-sound source). Off by default so the
+   * plain cross-scene import is unchanged. MIDI panels only. @since SDK 2.20.0
+   */
+  includeSameScene?: boolean;
 }
 
 export interface PluginTrackInfo extends PluginTrackHandle {
