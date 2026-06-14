@@ -445,6 +445,18 @@ export interface PluginHost {
   /** Get current plugin state (base64-encoded). */
   getPluginState(trackId: string, pluginIndex: number): Promise<string>;
 
+  /**
+   * Set a plugin's RAW VST3/AU state — the plugin's own getStateInformation
+   * format, bypassing Tracktion's ValueTree wrapper. Use for third-party
+   * instruments (u-he Diva, Serum, …) whose patches the ValueTree round-trip
+   * does not faithfully preserve. Default Surge XT presets use setPluginState.
+   * @since SDK 2.15.0
+   */
+  setRawPluginState(trackId: string, pluginIndex: number, stateBase64: string): Promise<void>;
+
+  /** Get a plugin's RAW VST3/AU state (see setRawPluginState). @since SDK 2.15.0 */
+  getRawPluginState(trackId: string, pluginIndex: number): Promise<string>;
+
   /** List plugins currently loaded on a track. */
   getTrackPlugins(trackId: string): Promise<PluginSynthInfo[]>;
 
@@ -1423,10 +1435,19 @@ export interface ImportCandidateScene {
  * 'instrument', synths → 'preset'. `label` is the human name for the History row.
  * @since SDK 2.14.0
  */
+/**
+ * How a synth `state` blob is serialized. `valuetree` is Tracktion's wrapped
+ * format (default Surge XT presets); `raw` is the plugin's own
+ * getStateInformation format (third-party instruments). Absent ⇒ `valuetree`,
+ * for backward compatibility with history recorded before SDK 2.15.0.
+ * @since SDK 2.15.0
+ */
+export type SynthStateType = 'raw' | 'valuetree';
+
 export type TrackSoundSnapshot =
   | { kind: 'sample'; samplePath: string; label: string }
   | { kind: 'instrument'; displayName: string; instrumentId: string | null; zones: InstrumentZone[]; label: string }
-  | { kind: 'preset'; state: string; label: string };
+  | { kind: 'preset'; state: string; label: string; stateType?: SynthStateType };
 
 /** Options for `PluginHost.listImportableTracks`. @since SDK 2.13.0 */
 export interface ListImportableTracksOptions {

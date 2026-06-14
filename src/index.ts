@@ -153,6 +153,7 @@ export {
 export { TrackRow, type SDKTrackRowProps } from './components/TrackRow';
 export { ImportTrackModal, type ImportTrackModalProps } from './components/ImportTrackModal';
 export { ConfirmDialog, type ConfirmDialogProps } from './components/ConfirmDialog';
+export { Modal, type ModalProps } from './components/Modal';
 export {
   TrackDrawer,
   type TrackDrawerProps,

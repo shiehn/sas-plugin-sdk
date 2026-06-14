@@ -13,7 +13,8 @@
  * @since SDK 2.17.0
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
+import { Modal } from './Modal';
 
 export interface ConfirmDialogProps {
   /** Controls visibility (the caller owns open/closed). */
@@ -49,28 +50,9 @@ export function ConfirmDialog({
 }: ConfirmDialogProps): React.ReactElement | null {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
-  // Escape cancels; focus Cancel on open so a reflexive Enter dismisses, not deletes.
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCancel();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    cancelRef.current?.focus();
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onCancel]);
-
-  if (!open) return null;
-
+  // Escape, backdrop click, and focus-on-open are owned by the shared <Modal>.
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      data-testid={`${testIdPrefix}-overlay`}
-      onClick={onCancel}
-    >
+    <Modal open={open} onClose={onCancel} testIdPrefix={testIdPrefix} initialFocusRef={cancelRef}>
       <div
         className="w-[360px] max-w-[90vw] flex flex-col rounded-md border border-sas-border bg-sas-panel shadow-xl"
         onClick={(e) => e.stopPropagation()}
@@ -119,7 +101,7 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

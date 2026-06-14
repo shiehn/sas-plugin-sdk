@@ -16,6 +16,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
+import { Modal } from './Modal';
 import type {
   PluginHost,
   ImportCandidateScene,
@@ -105,16 +106,6 @@ export function ImportTrackModal({
     }
   }, [open, refresh]);
 
-  // Escape closes.
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
   const handleImport = useCallback(
     async (
       track: ImportCandidateTrack,
@@ -170,11 +161,7 @@ export function ImportTrackModal({
   const selectedScene = scenes.find((s) => s.sceneId === selectedSceneId) ?? null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      data-testid={`${testIdPrefix}-overlay`}
-      onClick={onClose}
-    >
+    <Modal open={open} onClose={onClose} testIdPrefix={testIdPrefix}>
       <div
         className="w-[420px] max-h-[70vh] overflow-hidden flex flex-col rounded-md border border-sas-border bg-sas-panel shadow-xl"
         onClick={(e) => e.stopPropagation()}
@@ -285,6 +272,6 @@ export function ImportTrackModal({
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
