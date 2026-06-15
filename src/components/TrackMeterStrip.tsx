@@ -3,15 +3,15 @@
  * track row. Cosmetic: gives a general sense of each track's level and adds
  * motion during playback.
  *
- * This is deliberately its OWN component so the per-row level selector
- * (`useTrackLevel`) re-renders ONLY this strip at ~30Hz, never the heavy
+ * This is deliberately its OWN component so the per-row meter selector
+ * (`useTrackMeter`) re-renders ONLY this strip at ~30Hz, never the heavy
  * TrackRow around it. Render it as a full-width sibling directly under a row
  * body; it welds on with a squared top edge (like the track drawer does).
  */
 
 import React from 'react';
 import { LevelMeter } from './LevelMeter';
-import { useTrackLevel, type TrackLevelsHandle } from '../hooks/useTrackLevels';
+import { useTrackMeter, type TrackLevelsHandle } from '../hooks/useTrackLevels';
 
 export interface TrackMeterStripProps {
   /** Shared meter handle from `useTrackLevels(host, isPlaying)`. */
@@ -30,7 +30,7 @@ export const TrackMeterStrip: React.FC<TrackMeterStripProps> = ({
   roundBottom = true,
   className,
 }) => {
-  const level = useTrackLevel(levels, trackId);
+  const meter = useTrackMeter(levels, trackId);
 
   return (
     <div
@@ -39,9 +39,10 @@ export const TrackMeterStrip: React.FC<TrackMeterStripProps> = ({
     >
       <LevelMeter
         compact
-        active={level != null}
-        peakDb={level?.peakDb ?? -120}
-        clipped={level?.clipped ?? false}
+        active={meter.active}
+        peakDb={meter.peakDb}
+        peakHoldDb={meter.peakHoldDb}
+        clipped={meter.clipped}
         data-testid={`sdk-track-meter-bar-${trackId}`}
       />
     </div>

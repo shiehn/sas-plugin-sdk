@@ -225,8 +225,10 @@ export {
 export {
   useTrackLevels,
   useTrackLevel,
+  useTrackMeter,
   useTransportPlaying,
   type TrackLevelsHandle,
+  type TrackMeterView,
 } from './hooks/useTrackLevels';
 
 // ============================================================================
