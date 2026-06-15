@@ -14,6 +14,8 @@ import React from 'react';
 import { AlertCircle, ChevronDown, GripVertical } from 'lucide-react';
 import { TrackDrawer, type DrawerTab } from './TrackDrawer';
 import { ConfirmDialog } from './ConfirmDialog';
+import { TrackMeterStrip } from './TrackMeterStrip';
+import type { TrackLevelsHandle } from '../hooks/useTrackLevels';
 import type { InstrumentDescriptor, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
 import type { TrackRowDragProps } from '../hooks/useTrackReorder';
 import { VolumeSlider } from './VolumeSlider';
@@ -143,6 +145,10 @@ export interface SDKTrackRowProps {
   /** Drag props from {@link useTrackReorder}. When present, renders the grip
    *  handle and makes the row a drop target. Omit for non-reorderable lists. */
   drag?: TrackRowDragProps;
+  // --- Per-track peak meter (cosmetic) ---
+  /** Shared meter handle from `useTrackLevels(host, isPlaying)`. When present,
+   *  a thin peak meter welds to the bottom of the row. Omit to hide it. */
+  levels?: TrackLevelsHandle;
 }
 
 // ============================================================================
@@ -204,6 +210,7 @@ export function TrackRow({
   editSnap,
   onAuditionNote,
   drag,
+  levels,
 }: SDKTrackRowProps): React.ReactElement {
   const { muted: isMuted, solo: isSoloed, volume: currentVolume, pan: currentPan } = runtimeState;
 
@@ -243,7 +250,7 @@ export function TrackRow({
     <div data-testid="sdk-track-row-wrapper" className="w-full" {...(drag?.rowProps ?? {})}>
       <div
         data-testid="sdk-track-row"
-        className={`relative flex items-stretch gap-1 p-2 rounded-sm border w-full overflow-hidden ${borderClass} bg-sas-panel-alt ${drag?.isDragging ? 'opacity-40' : ''} ${drag?.isDragTarget ? 'ring-2 ring-sas-accent ring-inset' : ''}`}
+        className={`relative flex items-stretch gap-1 p-2 ${levels ? 'rounded-t-sm' : 'rounded-sm'} border w-full overflow-hidden ${borderClass} bg-sas-panel-alt ${drag?.isDragging ? 'opacity-40' : ''} ${drag?.isDragTarget ? 'ring-2 ring-sas-accent ring-inset' : ''}`}
         style={{
           borderLeftColor: needsGeneration ? '#f59e0b' : borderColorStyle,
           borderLeftWidth: '3px',
@@ -483,6 +490,13 @@ export function TrackRow({
           </div>
         </div>
       </div>
+
+      {/* Thin per-track peak meter, welded to the bottom of the row (cosmetic).
+          Isolated in TrackMeterStrip so its ~30Hz updates re-render only the
+          strip, never this whole row. Squared bottom when a drawer welds below. */}
+      {levels && (
+        <TrackMeterStrip levels={levels} trackId={track.id} roundBottom={!drawerOpen} />
+      )}
 
       {/* Unified track drawer — one drawer, contextual tabs (FX / Pick / History / Import).
           The FX button opens it to 'fx'; the ▾ button to a non-FX tab. Which tabs
