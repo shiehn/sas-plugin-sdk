@@ -641,6 +641,17 @@ export interface PluginHost {
   /** Get current transport state (one-shot). */
   getTransportState(): Promise<PluginTransportState>;
 
+  /**
+   * One-shot mono peak level for every track this plugin owns. Drives the
+   * cosmetic per-track strip meters; poll at ~30Hz while the transport is
+   * playing. The host scopes the result to this plugin's tracks and coalesces
+   * the underlying engine read, so a busy engine yields a STALE meter rather
+   * than a backlog (playback always wins over the GUI). Optional: guard with
+   * `typeof host.getTrackLevels === 'function'` for older hosts.
+   * @since SDK 2.21.0
+   */
+  getTrackLevels?(): Promise<PluginTrackLevel[]>;
+
   // --- LLM Access (metered, authenticated) ---
 
   /** Generate text/JSON via the host's authenticated LLM service. */
@@ -1765,6 +1776,21 @@ export interface PluginTransportState {
   bpm: number;
   position: number;        // in seconds
   timeSignature: string;
+}
+
+/**
+ * Mono peak level for a single track, as reported by `getTrackLevels()`.
+ * Drives the cosmetic per-track strip meters. `peakDb` is the max of the
+ * L/R channels, floored at -120 (the "no signal" sentinel).
+ * @since SDK 2.21.0
+ */
+export interface PluginTrackLevel {
+  /** Tracktion engine track id — matches `PluginTrackHandle.id`. */
+  trackId: string;
+  /** Mono peak in dBFS (max of L/R), floored at -120. */
+  peakDb: number;
+  /** Latched overload since the last poll. */
+  clipped: boolean;
 }
 
 export interface PluginSceneInfo {

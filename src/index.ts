@@ -44,6 +44,7 @@ export type {
   TransportEvent,
   DeckBoundaryEvent,
   PluginTransportState,
+  PluginTrackLevel,
   PluginSceneInfo,
   PluginSceneContext,
   BulkAddPlaceholderTrack,
@@ -195,6 +196,7 @@ export {
 // plugins reach it through the SDK, not a relative app path). Since 2.10.0.
 export { WaveformView, type WaveformViewProps } from './components/WaveformView';
 export { LevelMeter, type LevelMeterProps } from './components/LevelMeter';
+export { TrackMeterStrip, type TrackMeterStripProps } from './components/TrackMeterStrip';
 export { ScrollingWaveform, type ScrollingWaveformProps } from './components/ScrollingWaveform';
 export { OffsetScrubber, type OffsetScrubberProps } from './components/OffsetScrubber';
 export { computePeaks, drawWaveform, type WaveformPeaks } from './components/waveform';
@@ -220,6 +222,12 @@ export {
   type UseTrackReorderResult,
   type TrackRowDragProps,
 } from './hooks/useTrackReorder';
+export {
+  useTrackLevels,
+  useTrackLevel,
+  useTransportPlaying,
+  type TrackLevelsHandle,
+} from './hooks/useTrackLevels';
 
 // ============================================================================
 // Constants
