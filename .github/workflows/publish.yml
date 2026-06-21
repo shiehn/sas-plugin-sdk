@@ -6,6 +6,7 @@ on:
     paths-ignore:
       - '*.md'
       - 'LICENSE'
+  workflow_dispatch:
 
 jobs:
   publish:
@@ -13,14 +14,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
@@ -41,4 +42,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Push version bump
-        run: git push origin main --tags
+        run: |
+          # Rebase onto any commits that landed during the run so a stale
+          # checkout (e.g. a manual re-run of an older commit) can't fail
+          # the push with a non-fast-forward rejection.
+          git pull --rebase origin main
+          git push origin main --tags
