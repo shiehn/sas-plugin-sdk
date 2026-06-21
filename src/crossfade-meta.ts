@@ -49,6 +49,10 @@ export interface CrossfadePairMeta {
   sliderPos: number;
   originDbId: string;
   targetDbId: string;
+  /** DB id of the ORIGIN source track (in the from scene) — drives the "used once" exclusion. */
+  originSourceDbId: string;
+  /** DB id of the TARGET source track (in the to scene). */
+  targetSourceDbId: string;
   originSourceName: string;
   originSoundLabel: string;
   targetSourceName: string;
@@ -103,6 +107,8 @@ export function parseCrossfadePairs(sceneData: Record<string, unknown>): Crossfa
       sliderPos: g.origin.meta.sliderPos,
       originDbId: g.origin.dbId,
       targetDbId: g.target.dbId,
+      originSourceDbId: g.origin.meta.sourceTrackDbId,
+      targetSourceDbId: g.target.meta.sourceTrackDbId,
       originSourceName: g.origin.meta.sourceName,
       originSoundLabel: g.origin.meta.soundLabel,
       targetSourceName: g.target.meta.sourceName,

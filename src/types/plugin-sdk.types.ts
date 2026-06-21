@@ -652,6 +652,11 @@ export interface PluginHost {
    * MUST null-check. @since SDK 2.24.0
    */
   getSceneKey?(sceneDbId: string): Promise<{ key: string; mode: string } | null>;
+  /**
+   * Read a scene's human display name by db id (for labelling a crossfade's
+   * origin/target scenes). Optional — callers MUST null-check. @since SDK 2.26.0
+   */
+  getSceneName?(sceneDbId: string): Promise<string | null>;
 
   // --- Transport & Playback Events ---
 

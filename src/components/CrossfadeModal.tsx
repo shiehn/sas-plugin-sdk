@@ -3,8 +3,9 @@
  *
  * Shown only inside a `scene_type='transition'` scene. The user picks an ORIGIN
  * track (from the transition's FROM scene) and a TARGET track (from its TO
- * scene). Crossfades are same-role: once an origin is chosen, the target
- * dropdown is filtered to the origin's role.
+ * scene), in ANY order — the only constraint is same plugin/family (the picker is
+ * per-panel). A source track already used in a crossfade is hidden (via
+ * excludeSourceDbIds), so each source is used at most once.
  *
  * Self-fetching: given the scoped `host`, it calls `host.listSceneFamilyTracks`
  * for both scenes (ungated — a transition deliberately bridges different keys).
@@ -26,7 +27,7 @@ export interface CrossfadeSelection {
   dbId: string;
   /** Display name (for the row caption). */
   name: string;
-  /** Musical role (same for both — enforced by the picker). */
+  /** Musical role of the source track (the panel uses the TARGET's for generation). */
   role?: string;
 }
 
@@ -43,6 +44,12 @@ export interface CrossfadeModalProps {
   fromSceneName?: string;
   /** Display name for the target scene heading (optional). */
   toSceneName?: string;
+  /**
+   * Source-track DB ids already used in a crossfade (origin + target of every
+   * existing pair in this panel). Hidden from BOTH dropdowns so each source is
+   * used at most once. @since SDK 2.26.0
+   */
+  excludeSourceDbIds?: readonly string[];
   /** Close handler (Escape, backdrop, Cancel, or after a successful create). */
   onClose: () => void;
   /** Build the crossfade pair. Should reject on failure so the modal shows it. */
@@ -63,6 +70,7 @@ export function CrossfadeModal({
   toSceneId,
   fromSceneName,
   toSceneName,
+  excludeSourceDbIds,
   onClose,
   onCreate,
   testIdPrefix = 'crossfade-modal',
@@ -72,6 +80,8 @@ export function CrossfadeModal({
   const [targetDbId, setTargetDbId] = useState<string>('');
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fromName, setFromName] = useState<string | null>(null);
+  const [toName, setToName] = useState<string | null>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -81,12 +91,15 @@ export function CrossfadeModal({
     }
     setLoad({ status: 'loading' });
     try {
-      const [origin, target] = await Promise.all([
+      const [origin, target, fName, tName] = await Promise.all([
         host.listSceneFamilyTracks(fromSceneId),
         host.listSceneFamilyTracks(toSceneId),
+        host.getSceneName ? host.getSceneName(fromSceneId) : Promise.resolve(null),
+        host.getSceneName ? host.getSceneName(toSceneId) : Promise.resolve(null),
       ]);
+      setFromName(fName);
+      setToName(tName);
       setLoad({ status: 'ready', origin, target });
-      setOriginDbId(origin[0]?.dbId ?? '');
     } catch (err: unknown) {
       setLoad({ status: 'error', message: err instanceof Error ? err.message : 'Failed to load tracks.' });
     }
@@ -103,27 +116,33 @@ export function CrossfadeModal({
     }
   }, [open, refresh]);
 
-  const originTrack = useMemo(
-    () => (load.status === 'ready' ? load.origin.find((t) => t.dbId === originDbId) ?? null : null),
-    [load, originDbId],
+  // Hide any source track already used in a crossfade (each source used once).
+  const excludeSet = useMemo(() => new Set(excludeSourceDbIds ?? []), [excludeSourceDbIds]);
+
+  // The only constraint is same plugin/family (already enforced per-panel), so the
+  // two lists are independent — pick in any order, any role.
+  const originCandidates = useMemo(
+    () => (load.status === 'ready' ? load.origin.filter((t) => !excludeSet.has(t.dbId)) : []),
+    [load, excludeSet],
   );
-  const originRole = originTrack?.role;
+  const targetCandidates = useMemo(
+    () => (load.status === 'ready' ? load.target.filter((t) => !excludeSet.has(t.dbId)) : []),
+    [load, excludeSet],
+  );
 
-  // Same-role pairing: target candidates filtered to the origin's role. If the
-  // origin track has no role at all, don't over-filter (degenerate case).
-  const targetCandidates = useMemo(() => {
-    if (load.status !== 'ready') return [];
-    if (!originRole) return load.target;
-    return load.target.filter((t) => t.role === originRole);
-  }, [load, originRole]);
-
-  // Keep the target selection valid as the origin (and thus the filter) changes.
+  // Keep each selection valid / defaulted to its first candidate, independently.
+  useEffect(() => {
+    if (!originCandidates.some((t) => t.dbId === originDbId)) {
+      setOriginDbId(originCandidates[0]?.dbId ?? '');
+    }
+  }, [originCandidates, originDbId]);
   useEffect(() => {
     if (!targetCandidates.some((t) => t.dbId === targetDbId)) {
       setTargetDbId(targetCandidates[0]?.dbId ?? '');
     }
   }, [targetCandidates, targetDbId]);
 
+  const originTrack = originCandidates.find((t) => t.dbId === originDbId) ?? null;
   const targetTrack = targetCandidates.find((t) => t.dbId === targetDbId) ?? null;
   const canCreate = !isCreating && !!originTrack && !!targetTrack;
 
@@ -147,6 +166,10 @@ export function CrossfadeModal({
     }
   }, [originTrack, targetTrack, onCreate, onClose]);
 
+  // Prefer the live-fetched scene names; fall back to the optional props.
+  const fromLabel = fromName ?? fromSceneName ?? null;
+  const toLabel = toName ?? toSceneName ?? null;
+
   if (!open) return null;
 
   return (
@@ -159,9 +182,9 @@ export function CrossfadeModal({
         <h3 className="text-sm font-bold text-sas-text">Add crossfade</h3>
         <p className="text-[11px] text-sas-muted leading-relaxed">
           Bridge a track from{' '}
-          <span className="text-sas-text">{fromSceneName ?? 'the origin scene'}</span> into one from{' '}
-          <span className="text-sas-text">{toSceneName ?? 'the target scene'}</span>. Both layers share
-          one generated part; each keeps its own preset.
+          <span className="text-sas-text">{fromLabel ?? 'the origin scene'}</span> into one from{' '}
+          <span className="text-sas-text">{toLabel ?? 'the target scene'}</span>. Both layers share one
+          generated part; each keeps its own preset.
         </p>
 
         {load.status === 'loading' && (
@@ -171,17 +194,20 @@ export function CrossfadeModal({
           <div className="text-xs text-sas-danger py-4 text-center">{load.message}</div>
         )}
         {load.status === 'ready' &&
-          (load.origin.length === 0 ? (
+          (originCandidates.length === 0 ? (
             <div
               className="text-xs text-sas-muted py-4 text-center"
               data-testid={`${testIdPrefix}-empty-origin`}
             >
-              No matching tracks in the origin scene. Add one there first.
+              No available tracks in {fromLabel ?? 'the origin scene'}. Add one (or free one from another
+              crossfade) first.
             </div>
           ) : (
             <>
               <label className="block">
-                <span className="text-[10px] uppercase tracking-wide text-sas-muted">Origin (top)</span>
+                <span className="text-[10px] uppercase tracking-wide text-sas-muted">
+                  Origin {fromLabel ? `(${fromLabel})` : '(top)'}
+                </span>
                 <select
                   data-testid={`${testIdPrefix}-origin-select`}
                   value={originDbId}
@@ -189,7 +215,7 @@ export function CrossfadeModal({
                   disabled={isCreating}
                   className="sas-input w-full mt-0.5 text-xs"
                 >
-                  {load.origin.map((t) => (
+                  {originCandidates.map((t) => (
                     <option key={t.dbId} value={t.dbId}>
                       {t.name}
                       {t.role ? ` · ${t.role}` : ''}
@@ -200,11 +226,11 @@ export function CrossfadeModal({
 
               <label className="block">
                 <span className="text-[10px] uppercase tracking-wide text-sas-muted">
-                  Target (bottom){originRole ? ` · ${originRole}` : ''}
+                  Target {toLabel ? `(${toLabel})` : '(bottom)'}
                 </span>
                 {targetCandidates.length === 0 ? (
                   <div className="text-xs text-sas-danger mt-0.5" data-testid={`${testIdPrefix}-empty-target`}>
-                    No {originRole ?? 'matching'} track in the target scene to crossfade into.
+                    No available tracks in {toLabel ?? 'the target scene'} to crossfade into.
                   </div>
                 ) : (
                   <select
