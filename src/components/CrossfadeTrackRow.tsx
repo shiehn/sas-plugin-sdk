@@ -21,9 +21,7 @@ import { TrackRow } from './TrackRow';
 import { ConfirmDialog } from './ConfirmDialog';
 import { EMPTY_FX_DETAIL_STATE } from '../types/fx-toggle.types';
 import type { TrackLevelsHandle } from '../hooks/useTrackLevels';
-
-/** Which half of the pair a per-layer control targets. */
-export type CrossfadeSlot = 'origin' | 'target';
+import type { CrossfadeSlot } from '../crossfade-meta';
 
 /** One layer (engine track) of a crossfade pair. */
 export interface CrossfadeLayer {

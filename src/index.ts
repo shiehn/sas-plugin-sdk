@@ -157,8 +157,15 @@ export {
   CrossfadeTrackRow,
   type CrossfadeTrackRowProps,
   type CrossfadeLayer,
-  type CrossfadeSlot,
 } from './components/CrossfadeTrackRow';
+export {
+  EQUAL_POWER_GAIN,
+  parseCrossfadePairs,
+  asCrossfadeMeta,
+  type CrossfadeSlot,
+  type CrossfadeMeta,
+  type CrossfadePairMeta,
+} from './crossfade-meta';
 export { ImportTrackModal, type ImportTrackModalProps } from './components/ImportTrackModal';
 export {
   CrossfadeModal,
