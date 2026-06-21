@@ -638,6 +638,14 @@ export interface PluginHost {
    */
   listSceneFamilyTracks?(sceneDbId: string): Promise<SceneFamilyTrack[]>;
 
+  /**
+   * Read a specific scene's musical key (tonic + mode) by db id. Labels the
+   * SOURCE keys of a crossfade's origin/target patterns — the active-scene
+   * musical context only carries the transition scene's key. Optional — callers
+   * MUST null-check. @since SDK 2.24.0
+   */
+  getSceneKey?(sceneDbId: string): Promise<{ key: string; mode: string } | null>;
+
   // --- Transport & Playback Events ---
 
   /** Subscribe to transport state changes. Returns unsubscribe function. */

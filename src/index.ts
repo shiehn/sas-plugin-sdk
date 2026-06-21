@@ -166,6 +166,7 @@ export {
   type CrossfadeMeta,
   type CrossfadePairMeta,
 } from './crossfade-meta';
+export { buildCrossfadeInpaintPrompt, type CrossfadeInpaintInput } from './crossfade-inpaint';
 export { ImportTrackModal, type ImportTrackModalProps } from './components/ImportTrackModal';
 export {
   CrossfadeModal,
