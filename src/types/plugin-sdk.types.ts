@@ -627,6 +627,17 @@ export interface PluginHost {
    */
   readImportableTrackMidi?(sourceTrackDbId: string): Promise<ReadMidiResult>;
 
+  /**
+   * List THIS panel's family tracks in a specific scene (by DB id), WITHOUT the
+   * import key/length/tempo gate that `listImportableTracks` applies. Powers the
+   * crossfade picker: the origin (from) and target (to) scenes of a transition
+   * deliberately differ in key, so gating would wrongly hide valid candidates.
+   * Project-scoped, read-only. Returns [] for an unknown/empty scene. Optional —
+   * callers MUST null-check (see `listImportableTracks`).
+   * @since SDK 2.22.0
+   */
+  listSceneFamilyTracks?(sceneDbId: string): Promise<SceneFamilyTrack[]>;
+
   // --- Transport & Playback Events ---
 
   /** Subscribe to transport state changes. Returns unsubscribe function. */
@@ -1419,6 +1430,21 @@ export interface ImportCandidateTrack {
 }
 
 /**
+ * One track in a specific scene, returned by `host.listSceneFamilyTracks`,
+ * already narrowed to the calling panel's family. Unlike `ImportCandidateTrack`
+ * it carries NO import gate — the crossfade picker lists every same-family track
+ * in the origin/target scene regardless of key/length. @since SDK 2.22.0
+ */
+export interface SceneFamilyTrack {
+  /** Track's DB row id — the selector for getTrackSound + crossfade metadata. */
+  dbId: string;
+  /** Display name shown in the picker. */
+  name: string;
+  /** Musical role if set — used to enforce same-role crossfade pairing. */
+  role?: string;
+}
+
+/**
  * One OTHER scene and its candidate tracks (already type-filtered). Scenes with
  * zero candidates of the panel's type are omitted by the host.
  * @since SDK 2.13.0
@@ -1819,6 +1845,17 @@ export interface PluginSceneContext {
   hasTracks: boolean;
   /** Whether bulk generation is currently in progress */
   isBulkGenerating: boolean;
+  /**
+   * Scene kind. A 'transition' scene bridges two other scenes (the
+   * transition-as-scene feature) and unlocks the crossfade-track UI in the
+   * instrument panels; ordinary scenes are 'scene'. Absent on older hosts.
+   * @since SDK 2.22.0
+   */
+  sceneType?: 'scene' | 'transition';
+  /** For a transition scene, the DB id of the scene it bridges FROM (origin). Null otherwise. @since SDK 2.22.0 */
+  transitionFromSceneId?: string | null;
+  /** For a transition scene, the DB id of the scene it bridges TO (target). Null otherwise. @since SDK 2.22.0 */
+  transitionToSceneId?: string | null;
 }
 
 /** Placeholder track state for the progressive bulk-add UX */

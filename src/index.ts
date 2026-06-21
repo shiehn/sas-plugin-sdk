@@ -21,6 +21,7 @@ export type {
   PluginTrackInfo,
   ImportCandidateTrack,
   ImportCandidateScene,
+  SceneFamilyTrack,
   TrackSoundSnapshot,
   ListImportableTracksOptions,
   PluginSynthInfo,
@@ -152,7 +153,18 @@ export {
 // ============================================================================
 
 export { TrackRow, type SDKTrackRowProps } from './components/TrackRow';
+export {
+  CrossfadeTrackRow,
+  type CrossfadeTrackRowProps,
+  type CrossfadeLayer,
+  type CrossfadeSlot,
+} from './components/CrossfadeTrackRow';
 export { ImportTrackModal, type ImportTrackModalProps } from './components/ImportTrackModal';
+export {
+  CrossfadeModal,
+  type CrossfadeModalProps,
+  type CrossfadeSelection,
+} from './components/CrossfadeModal';
 export { ConfirmDialog, type ConfirmDialogProps } from './components/ConfirmDialog';
 export { Modal, type ModalProps } from './components/Modal';
 export {

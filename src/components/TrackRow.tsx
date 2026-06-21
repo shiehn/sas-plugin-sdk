@@ -67,8 +67,9 @@ export interface SDKTrackRowProps {
   onShuffle?: () => void;
   /** Duplicate track (optional — omit to hide Copy button) */
   onCopy?: () => void;
-  /** Delete track */
-  onDelete: () => void;
+  /** Delete track. Optional — omit to hide the delete button (e.g. a composite
+   *  like CrossfadeTrackRow owns a single delete for the whole pair). */
+  onDelete?: () => void;
   /** Custom content replacing the prompt input (e.g., sample info display) */
   contentSlot?: React.ReactNode;
   /** Toggle mute */
@@ -402,14 +403,16 @@ export function TrackRow({
             >
               M
             </button>
-            <button
-              data-testid="sdk-delete-button"
-              onClick={() => setConfirmDelete(true)}
-              className="text-sas-danger/70 hover:text-sas-danger px-1 py-0.5 transition-colors text-sm"
-              title="Delete track"
-            >
-              x
-            </button>
+            {onDelete && (
+              <button
+                data-testid="sdk-delete-button"
+                onClick={() => setConfirmDelete(true)}
+                className="text-sas-danger/70 hover:text-sas-danger px-1 py-0.5 transition-colors text-sm"
+                title="Delete track"
+              >
+                x
+              </button>
+            )}
           </div>
           {/* Bottom row: [Shuffle] [FX] Solo [▾] */}
           <div className="flex gap-1 items-center">
@@ -552,7 +555,7 @@ export function TrackRow({
         confirmLabel="Delete"
         onConfirm={() => {
           setConfirmDelete(false);
-          onDelete();
+          onDelete?.();
         }}
         onCancel={() => setConfirmDelete(false)}
         testIdPrefix="track-delete-confirm"
