@@ -162,9 +162,12 @@ export {
   EQUAL_POWER_GAIN,
   parseCrossfadePairs,
   asCrossfadeMeta,
+  buildCrossfadeVolumeCurves,
   type CrossfadeSlot,
   type CrossfadeMeta,
   type CrossfadePairMeta,
+  type VolumeAutomationPoint,
+  type CrossfadeVolumeCurves,
 } from './crossfade-meta';
 export { buildCrossfadeInpaintPrompt, type CrossfadeInpaintInput } from './crossfade-inpaint';
 export { ImportTrackModal, type ImportTrackModalProps } from './components/ImportTrackModal';

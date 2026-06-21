@@ -111,3 +111,59 @@ export function parseCrossfadePairs(sceneData: Record<string, unknown>): Crossfa
   }
   return pairs;
 }
+
+// ============================================================================
+// Crossfade volume automation (Phase 3 — the functional fader)
+// ============================================================================
+
+/** One volume-automation point: a dB value at a time offset (seconds from clip start). */
+export interface VolumeAutomationPoint {
+  time: number; // seconds
+  db: number; // gain in dB (-80 ≈ silent, 0 = unity)
+}
+
+/** Origin + target volume curves for one crossfade pair. */
+export interface CrossfadeVolumeCurves {
+  origin: VolumeAutomationPoint[];
+  target: VolumeAutomationPoint[];
+}
+
+const FADE_FLOOR_DB = -80;
+
+function gainToDb(gain: number): number {
+  return gain <= 1e-4 ? FADE_FLOOR_DB : Math.max(FADE_FLOOR_DB, 20 * Math.log10(gain));
+}
+
+/**
+ * Equal-power crossfade volume curves over a transition of `bars` at `bpm`.
+ * The ORIGIN layer fades OUT and the TARGET fades IN; `sliderPos` (0..1) sets
+ * WHERE in time the equal-power (-3 dB) crossover sits — 0 = hand off near the
+ * start, 1 = hold the origin until near the end. Points span the clip window
+ * [0, durationSeconds] so the engine re-reads them each loop (re-fade per loop).
+ * `steps`+1 points with linear interpolation approximate the cos/sin curve.
+ *
+ * Returns dB point arrays for `host.setTrackVolumeAutomation` — origin on the top
+ * layer, target on the bottom. @since SDK 2.25.0
+ */
+export function buildCrossfadeVolumeCurves(
+  bars: number,
+  bpm: number,
+  sliderPos: number,
+  steps = 32,
+): CrossfadeVolumeCurves {
+  const durationSeconds = (bars * 4 * 60) / Math.max(1, bpm);
+  // Keep the crossover off the exact ends so there's always an actual fade.
+  const s = Math.min(0.98, Math.max(0.02, sliderPos));
+  const round = (n: number): number => Math.round(n * 1000) / 1000;
+  const origin: VolumeAutomationPoint[] = [];
+  const target: VolumeAutomationPoint[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const x = i / steps; // normalized time 0..1
+    const time = round(x * durationSeconds);
+    // Piecewise-linear angle so the equal-power crossover (π/4) lands at x = s.
+    const theta = x <= s ? (x / s) * (Math.PI / 4) : Math.PI / 4 + ((x - s) / (1 - s)) * (Math.PI / 4);
+    origin.push({ time, db: Math.round(gainToDb(Math.cos(theta)) * 100) / 100 });
+    target.push({ time, db: Math.round(gainToDb(Math.sin(theta)) * 100) / 100 });
+  }
+  return { origin, target };
+}

@@ -269,6 +269,13 @@ export interface PluginHost {
 
   /** Set track volume (linear 0.0 - 1.0). Only works on owned tracks. */
   setTrackVolume(trackId: string, volume: number): Promise<void>;
+  /**
+   * Set/replace a time-based volume automation curve (a fade envelope) on a track,
+   * or clear it with an empty array. Points are {time: seconds, db}; linear between
+   * points. Used by crossfade tracks to fade origin↔target across the looped
+   * transition. Optional — callers MUST null-check. @since SDK 2.25.0
+   */
+  setTrackVolumeAutomation?(trackId: string, points: Array<{ time: number; db: number }>): Promise<void>;
 
   /** Set track pan (-1.0 left to 1.0 right). Only works on owned tracks. */
   setTrackPan(trackId: string, pan: number): Promise<void>;
