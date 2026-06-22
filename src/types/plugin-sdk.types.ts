@@ -1462,6 +1462,10 @@ export interface SceneFamilyTrack {
   name: string;
   /** Musical role if set — used to enforce same-role crossfade pairing. */
   role?: string;
+  /** Generation prompt, when the track was AI-generated. The crossfade picker
+   * shows this as the primary label (users recognise tracks by prompt, not id).
+   * @since SDK 2.27.0 */
+  prompt?: string;
 }
 
 /**

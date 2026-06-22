@@ -63,6 +63,59 @@ type LoadState =
   | { status: 'error'; message: string }
   | { status: 'ready'; origin: SceneFamilyTrack[]; target: SceneFamilyTrack[] };
 
+/** Short, recognisable id prefix — the full id lives in the row's title. */
+function shortId(dbId: string): string {
+  return dbId.length > 8 ? dbId.slice(0, 8) : dbId;
+}
+
+/**
+ * One selectable track row. Users recognise tracks by their generation prompt,
+ * so the prompt is the prominent line; role + id sit underneath in a smaller,
+ * muted font (prompt → role → id order). Falls back to the display name when a
+ * track has no prompt (e.g. sample/audio).
+ */
+function CandidateRow({
+  track,
+  selected,
+  disabled,
+  onSelect,
+  testId,
+}: {
+  track: SceneFamilyTrack;
+  selected: boolean;
+  disabled: boolean;
+  onSelect: () => void;
+  testId: string;
+}): React.ReactElement {
+  const primary = track.prompt?.trim() || track.name;
+  const meta = [track.role, shortId(track.dbId)].filter(Boolean).join(' · ');
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      data-testid={testId}
+      data-value={track.dbId}
+      onClick={onSelect}
+      disabled={disabled}
+      className={`w-full text-left px-2 py-1.5 rounded-sm border transition-colors disabled:opacity-50 ${
+        selected
+          ? 'bg-sas-accent/15 border-sas-accent'
+          : 'bg-sas-panel border-sas-border hover:border-sas-accent/50'
+      }`}
+    >
+      <div className="text-xs text-sas-text truncate" title={primary}>
+        {primary}
+      </div>
+      {meta && (
+        <div className="text-[10px] text-sas-muted truncate mt-0.5" title={track.dbId}>
+          {meta}
+        </div>
+      )}
+    </button>
+  );
+}
+
 export function CrossfadeModal({
   host,
   open,
@@ -204,27 +257,30 @@ export function CrossfadeModal({
             </div>
           ) : (
             <>
-              <label className="block">
+              <div className="block">
                 <span className="text-[10px] uppercase tracking-wide text-sas-muted">
                   Origin {fromLabel ? `(${fromLabel})` : '(top)'}
                 </span>
-                <select
-                  data-testid={`${testIdPrefix}-origin-select`}
-                  value={originDbId}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setOriginDbId(e.target.value)}
-                  disabled={isCreating}
-                  className="sas-input w-full mt-0.5 text-xs"
+                <div
+                  role="radiogroup"
+                  aria-label="Origin track"
+                  data-testid={`${testIdPrefix}-origin-list`}
+                  className="mt-1 space-y-1 max-h-40 overflow-y-auto pr-0.5"
                 >
                   {originCandidates.map((t) => (
-                    <option key={t.dbId} value={t.dbId}>
-                      {t.name}
-                      {t.role ? ` · ${t.role}` : ''}
-                    </option>
+                    <CandidateRow
+                      key={t.dbId}
+                      track={t}
+                      selected={t.dbId === originDbId}
+                      disabled={isCreating}
+                      onSelect={() => setOriginDbId(t.dbId)}
+                      testId={`${testIdPrefix}-origin-option-${t.dbId}`}
+                    />
                   ))}
-                </select>
-              </label>
+                </div>
+              </div>
 
-              <label className="block">
+              <div className="block">
                 <span className="text-[10px] uppercase tracking-wide text-sas-muted">
                   Target {toLabel ? `(${toLabel})` : '(bottom)'}
                 </span>
@@ -233,22 +289,25 @@ export function CrossfadeModal({
                     No available tracks in {toLabel ?? 'the target scene'} to crossfade into.
                   </div>
                 ) : (
-                  <select
-                    data-testid={`${testIdPrefix}-target-select`}
-                    value={targetDbId}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTargetDbId(e.target.value)}
-                    disabled={isCreating}
-                    className="sas-input w-full mt-0.5 text-xs"
+                  <div
+                    role="radiogroup"
+                    aria-label="Target track"
+                    data-testid={`${testIdPrefix}-target-list`}
+                    className="mt-1 space-y-1 max-h-40 overflow-y-auto pr-0.5"
                   >
                     {targetCandidates.map((t) => (
-                      <option key={t.dbId} value={t.dbId}>
-                        {t.name}
-                        {t.role ? ` · ${t.role}` : ''}
-                      </option>
+                      <CandidateRow
+                        key={t.dbId}
+                        track={t}
+                        selected={t.dbId === targetDbId}
+                        disabled={isCreating}
+                        onSelect={() => setTargetDbId(t.dbId)}
+                        testId={`${testIdPrefix}-target-option-${t.dbId}`}
+                      />
                     ))}
-                  </select>
+                  </div>
                 )}
-              </label>
+              </div>
             </>
           ))}
 

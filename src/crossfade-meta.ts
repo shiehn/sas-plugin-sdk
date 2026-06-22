@@ -134,9 +134,11 @@ export interface CrossfadeVolumeCurves {
   target: VolumeAutomationPoint[];
 }
 
-const FADE_FLOOR_DB = -80;
+// Exported so fade-meta.ts can reuse the same floor + gain→dB mapping (a fade is
+// a crossfade with one empty endpoint; its volume curve must match exactly).
+export const FADE_FLOOR_DB = -80;
 
-function gainToDb(gain: number): number {
+export function gainToDb(gain: number): number {
   return gain <= 1e-4 ? FADE_FLOOR_DB : Math.max(FADE_FLOOR_DB, 20 * Math.log10(gain));
 }
 

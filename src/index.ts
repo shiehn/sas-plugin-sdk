@@ -170,6 +170,19 @@ export {
   type CrossfadeVolumeCurves,
 } from './crossfade-meta';
 export { buildCrossfadeInpaintPrompt, type CrossfadeInpaintInput } from './crossfade-inpaint';
+export {
+  parseFades,
+  asFadeMeta,
+  buildFadeVolumeCurve,
+  defaultFadeGesture,
+  TEXTURAL_ROLES,
+  type FadeDirection,
+  type FadeGesture,
+  type FadeMeta,
+  type FadeEntry,
+} from './fade-meta';
+export { FadeTrackRow, type FadeTrackRowProps, type FadeLayer } from './components/FadeTrackRow';
+export { FadeModal, type FadeModalProps, type FadeSelection } from './components/FadeModal';
 export { ImportTrackModal, type ImportTrackModalProps } from './components/ImportTrackModal';
 export {
   CrossfadeModal,
