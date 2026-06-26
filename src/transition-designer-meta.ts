@@ -37,6 +37,8 @@ export interface TransitionDesignerDraft {
   originOrder: (string | null)[];
   /** Target (scene B) column order — dbIds or `null` blanks. */
   targetOrder: (string | null)[];
+  /** Per one-sided-row audio effect, keyed by the source dbId. @since SDK 2.32.0 */
+  rowEffects?: Record<string, AudioEffect>;
 }
 
 /** scene-data key (under the transition scene) holding the staged draft. */
@@ -44,6 +46,24 @@ export const TRANSITION_DESIGNER_DRAFT_KEY = 'transitionDesigner:draft';
 
 /** The transition a single aligned row represents (derived from its two slots). */
 export type TransitionRowType = 'crossfade' | 'fade-out' | 'fade-in';
+
+/**
+ * Audio-only transition gesture for a ONE-SIDED (orphan) loop. `'fade'` is the
+ * default level ramp (works for any family); `stutter`/`chopped`/`delay` are
+ * audio panels only, surfaced via the row's effect selector when the panel
+ * passes `onCreateAudioTransition`. @since SDK 2.32.0
+ */
+export type AudioEffect = 'fade' | 'stutter' | 'chopped' | 'delay';
+export const AUDIO_EFFECTS: readonly AudioEffect[] = ['fade', 'stutter', 'chopped', 'delay'];
+export const AUDIO_EFFECT_LABEL: Record<AudioEffect, string> = {
+  fade: 'Fade',
+  stutter: 'Stutter',
+  chopped: 'Chopped',
+  delay: 'Delay',
+};
+export function asAudioEffect(v: unknown): AudioEffect | null {
+  return v === 'fade' || v === 'stutter' || v === 'chopped' || v === 'delay' ? v : null;
+}
 
 /** Derive a row's transition type from which slots are filled. `null` = empty row. */
 export function rowType(hasOrigin: boolean, hasTarget: boolean): TransitionRowType | null {
@@ -61,7 +81,21 @@ export function asTransitionDesignerDraft(val: unknown): TransitionDesignerDraft
     Array.isArray(a)
       ? (a.filter((x) => x === null || typeof x === 'string') as (string | null)[])
       : [];
-  return { originOrder: clean(d.originOrder), targetOrder: clean(d.targetOrder) };
+  const cleanEffects = (e: unknown): Record<string, AudioEffect> => {
+    const out: Record<string, AudioEffect> = {};
+    if (e && typeof e === 'object') {
+      for (const [k, v] of Object.entries(e as Record<string, unknown>)) {
+        const eff = asAudioEffect(v);
+        if (eff) out[k] = eff;
+      }
+    }
+    return out;
+  };
+  return {
+    originOrder: clean(d.originOrder),
+    targetOrder: clean(d.targetOrder),
+    rowEffects: cleanEffects(d.rowEffects),
+  };
 }
 
 /**

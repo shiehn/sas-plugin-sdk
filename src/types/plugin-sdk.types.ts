@@ -1078,6 +1078,16 @@ export interface PluginHost {
    */
   getSampleTrackInfo?(dbId: string): Promise<{ sampleId: string; fileName?: string; bpm?: number; key?: string } | null>;
 
+  /**
+   * Render an audio transition effect onto a sample (offline DSP via the audio
+   * tool), returning a NEW library sample to place. Used for stutter / chopped
+   * loop transitions. @since SDK 2.32.0
+   */
+  renderSampleEffect?(
+    sampleId: string,
+    spec: { effect: 'stutter' | 'chopped'; bars: number; bpm: number; repeats?: number; slices?: number },
+  ): Promise<PluginSampleInfo>;
+
   /** Time-stretch a sample to a target BPM. Returns the new sample info. */
   timeStretchSample(sampleId: string, targetBpm: number): Promise<PluginSampleInfo>;
 

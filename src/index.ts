@@ -208,9 +208,13 @@ export {
   slotsEqual,
   rowKey,
   dbIdsFromKeys,
+  AUDIO_EFFECTS,
+  AUDIO_EFFECT_LABEL,
+  asAudioEffect,
   type TransitionDesignerDraft,
   type TransitionRowType,
   type DesignerRowSlots,
+  type AudioEffect,
 } from './transition-designer-meta';
 export { ConfirmDialog, type ConfirmDialogProps } from './components/ConfirmDialog';
 export { Modal, type ModalProps } from './components/Modal';

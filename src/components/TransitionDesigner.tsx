@@ -50,6 +50,9 @@ import {
   slotsEqual,
   rowKey,
   dbIdsFromKeys,
+  type AudioEffect,
+  AUDIO_EFFECTS,
+  AUDIO_EFFECT_LABEL,
 } from '../transition-designer-meta';
 
 type Column = 'origin' | 'target';
@@ -80,6 +83,16 @@ export interface TransitionDesignerProps {
     selection: FadeSelection,
     direction: FadeDirection,
     gesture: FadeGesture,
+  ) => Promise<void>;
+  /**
+   * Build an AUDIO-only one-sided transition (stutter / chopped / delay). When
+   * provided, one-sided rows render an effect selector; absent (MIDI panels) →
+   * one-sided rows stay plain fades. @since SDK 2.32.0
+   */
+  onCreateAudioTransition?: (
+    selection: FadeSelection,
+    direction: FadeDirection,
+    effect: 'stutter' | 'chopped' | 'delay',
   ) => Promise<void>;
   /** Short family label for the heading, e.g. "Synths". */
   familyLabel?: string;
@@ -117,6 +130,7 @@ export function TransitionDesigner({
   excludeSourceDbIds,
   onCreateCrossfade,
   onCreateFade,
+  onCreateAudioTransition,
   familyLabel,
   testIdPrefix = 'transition-designer',
 }: TransitionDesignerProps): React.ReactElement {
@@ -131,6 +145,12 @@ export function TransitionDesigner({
   // several can run at once and a reorder mid-create still tracks the right row.
   const [creatingKeys, setCreatingKeys] = useState<Set<string>>(() => new Set());
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  // Per one-sided-row audio effect (keyed by source dbId). Only meaningful when
+  // onCreateAudioTransition is provided (audio panels).
+  const [rowEffects, setRowEffects] = useState<Record<string, AudioEffect>>({});
+  const rowEffectsRef = useRef(rowEffects);
+  rowEffectsRef.current = rowEffects;
+  const audioEffectsEnabled = !!onCreateAudioTransition;
 
   // Latest props/state read inside effects + handlers without widening deps.
   const excludeRef = useRef(excludeSourceDbIds);
@@ -190,6 +210,7 @@ export function TransitionDesigner({
       );
       setOriginSlots(po);
       setTargetSlots(pt);
+      setRowEffects(draft?.rowEffects ?? {});
       setFromName(fName);
       setToName(tName);
       setLoad({ status: 'ready', origin, target });
@@ -227,8 +248,23 @@ export function TransitionDesigner({
       setOriginSlots(po);
       setTargetSlots(pt);
       if (host.setSceneData) {
-        host.setSceneData(transitionSceneId, TRANSITION_DESIGNER_DRAFT_KEY, norm).catch(() => {});
+        host.setSceneData(transitionSceneId, TRANSITION_DESIGNER_DRAFT_KEY, { ...norm, rowEffects: rowEffectsRef.current }).catch(() => {});
       }
+    },
+    [host, transitionSceneId],
+  );
+
+  // Change a one-sided row's audio effect; persist alongside the slot draft.
+  const setRowEffect = useCallback(
+    (sourceDbId: string, effect: AudioEffect): void => {
+      setRowEffects((prev) => {
+        const next = { ...prev, [sourceDbId]: effect };
+        if (host.setSceneData) {
+          const norm = normalizeSlots(originSlotsRef.current, targetSlotsRef.current);
+          host.setSceneData(transitionSceneId, TRANSITION_DESIGNER_DRAFT_KEY, { ...norm, rowEffects: next }).catch(() => {});
+        }
+        return next;
+      });
     },
     [host, transitionSceneId],
   );
@@ -299,11 +335,21 @@ export function TransitionDesigner({
         } else if (row.type === 'fade-out') {
           const o = row.originId ? originByIdRef.current.get(row.originId) : undefined;
           if (!o) throw new Error('Track is no longer available — refresh and retry.');
-          await onCreateFade({ dbId: o.dbId, name: o.name, role: o.role }, 'out', defaultFadeGesture(o.role));
+          const eff = rowEffectsRef.current[o.dbId] ?? 'fade';
+          if (eff !== 'fade' && onCreateAudioTransition) {
+            await onCreateAudioTransition({ dbId: o.dbId, name: o.name, role: o.role }, 'out', eff);
+          } else {
+            await onCreateFade({ dbId: o.dbId, name: o.name, role: o.role }, 'out', defaultFadeGesture(o.role));
+          }
         } else {
           const t = row.targetId ? targetByIdRef.current.get(row.targetId) : undefined;
           if (!t) throw new Error('Track is no longer available — refresh and retry.');
-          await onCreateFade({ dbId: t.dbId, name: t.name, role: t.role }, 'in', defaultFadeGesture(t.role));
+          const eff = rowEffectsRef.current[t.dbId] ?? 'fade';
+          if (eff !== 'fade' && onCreateAudioTransition) {
+            await onCreateAudioTransition({ dbId: t.dbId, name: t.name, role: t.role }, 'in', eff);
+          } else {
+            await onCreateFade({ dbId: t.dbId, name: t.name, role: t.role }, 'in', defaultFadeGesture(t.role));
+          }
         }
       } catch (err: unknown) {
         setRowErrors((prev) => ({
@@ -318,7 +364,7 @@ export function TransitionDesigner({
         });
       }
     },
-    [onCreateCrossfade, onCreateFade],
+    [onCreateCrossfade, onCreateFade, onCreateAudioTransition],
   );
 
   // Fire every eligible row through a bounded concurrency pool.
@@ -544,19 +590,41 @@ export function TransitionDesigner({
 
                   {/* Center: type + create / progress */}
                   <div className="w-[160px] flex flex-col items-center gap-1">
-                    {row.type ? (
+                    {!row.type ? (
+                      <span className="text-[10px] text-sas-muted/50">—</span>
+                    ) : row.type === 'crossfade' ? (
                       <span
                         data-testid={`${testIdPrefix}-type-${i}`}
-                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded-sm border ${
-                          row.type === 'crossfade'
-                            ? 'border-sas-accent/50 text-sas-accent'
-                            : 'border-sas-border text-sas-muted'
-                        }`}
+                        className="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border border-sas-accent/50 text-sas-accent"
                       >
                         {TYPE_LABEL[row.type]}
                       </span>
+                    ) : audioEffectsEnabled ? (
+                      <div className="flex items-center gap-1" data-testid={`${testIdPrefix}-type-${i}`}>
+                        <select
+                          data-testid={`${testIdPrefix}-effect-${i}`}
+                          value={rowEffects[(row.originId ?? row.targetId) as string] ?? 'fade'}
+                          onChange={(e) => {
+                            const id = row.originId ?? row.targetId;
+                            if (id) setRowEffect(id, e.target.value as AudioEffect);
+                          }}
+                          className="text-[10px] bg-sas-panel border border-sas-border rounded-sm px-1 py-0.5 text-sas-text"
+                        >
+                          {AUDIO_EFFECTS.map((eff) => (
+                            <option key={eff} value={eff}>
+                              {AUDIO_EFFECT_LABEL[eff]}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-[9px] text-sas-muted">{row.type === 'fade-out' ? 'out' : 'in'}</span>
+                      </div>
                     ) : (
-                      <span className="text-[10px] text-sas-muted/50">—</span>
+                      <span
+                        data-testid={`${testIdPrefix}-type-${i}`}
+                        className="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border border-sas-border text-sas-muted"
+                      >
+                        {TYPE_LABEL[row.type]}
+                      </span>
                     )}
                     {isCreatingThis ? (
                       <div className="w-full">
