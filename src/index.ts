@@ -162,6 +162,8 @@ export {
   EQUAL_POWER_GAIN,
   parseCrossfadePairs,
   asCrossfadeMeta,
+  soundIdentity,
+  hashString,
   buildCrossfadeVolumeCurves,
   type CrossfadeSlot,
   type CrossfadeMeta,

@@ -12,6 +12,28 @@
  * @since SDK 2.23.0
  */
 
+import type { TrackSoundSnapshot } from './types/plugin-sdk.types';
+
+/**
+ * Stable, state-aware identity for a track's sound — used to auto-detect when a
+ * transition's SOURCE preset/sample has drifted from the copy on its layer. A
+ * preset hashes its full STATE blob (so a same-name param tweak still differs); a
+ * sample uses its path; an instrument uses its id + zones. Empty string = no sound.
+ * @since SDK 2.32.0
+ */
+export function hashString(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+export function soundIdentity(snap: TrackSoundSnapshot | null | undefined): string {
+  if (!snap) return '';
+  if (snap.kind === 'preset') return `p:${hashString(snap.state)}`;
+  if (snap.kind === 'sample') return `s:${snap.samplePath}`;
+  if (snap.kind === 'instrument') return `i:${snap.instrumentId ?? ''}:${hashString(JSON.stringify(snap.zones))}`;
+  return '';
+}
+
 /** Which half of the pair a per-layer control / member targets. */
 export type CrossfadeSlot = 'origin' | 'target';
 
