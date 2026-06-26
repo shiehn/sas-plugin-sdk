@@ -189,6 +189,27 @@ export {
   type CrossfadeModalProps,
   type CrossfadeSelection,
 } from './components/CrossfadeModal';
+// Transition Designer — the multi-row, persistent successor to CrossfadeModal +
+// FadeModal: a per-panel staging board that lays out every A→B pairing at once.
+// Reuses the panel's existing create/delete orchestration. Since 2.29.0.
+export {
+  TransitionDesigner,
+  type TransitionDesignerProps,
+} from './components/TransitionDesigner';
+export {
+  TRANSITION_DESIGNER_DRAFT_KEY,
+  rowType,
+  asTransitionDesignerDraft,
+  reconcileSlots,
+  buildRowSlots,
+  normalizeSlots,
+  padSlots,
+  padPair,
+  slotsEqual,
+  type TransitionDesignerDraft,
+  type TransitionRowType,
+  type DesignerRowSlots,
+} from './transition-designer-meta';
 export { ConfirmDialog, type ConfirmDialogProps } from './components/ConfirmDialog';
 export { Modal, type ModalProps } from './components/Modal';
 export {
