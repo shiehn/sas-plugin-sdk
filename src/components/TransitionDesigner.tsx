@@ -1,35 +1,37 @@
 /**
- * TransitionDesigner — the per-panel transition staging board.
+ * TransitionDesigner — the per-panel transition staging board, rendered INLINE as
+ * a toggled view inside a generator panel (NOT a modal).
  *
  * The multi-row, persistent successor to {@link CrossfadeModal} + {@link FadeModal}:
- * instead of opening a single-pair dialog ~20 times to wire a transition, the
- * user opens ONE full-screen board for a panel family and lays out every A→B
- * pairing at once. Shown only inside a `scene_type='transition'` scene and scoped
- * to one panel (a synth board shows only synth tracks — "drums can't crossfade to
- * synth" is enforced structurally because each board asks its own family-scoped
- * host).
+ * instead of opening a single-pair dialog ~20 times, the panel header gains a
+ * Tracks ⇄ Transition toggle; flipping to Transition replaces the panel's track
+ * list with this board. Playback is unaffected (the engine keeps playing the
+ * scene's tracks — they're just not shown until you toggle back). Shown only
+ * inside a `scene_type='transition'` scene and scoped to one panel family (a synth
+ * board shows only synth tracks — "drums can't crossfade to synth" is enforced
+ * structurally because each board asks its own family-scoped host).
  *
  * Two index-aligned, drag-reorderable columns: origin (scene A, left) and target
  * (scene B, right). Row i pairs origin[i] with target[i]; the pairing derives the
  * transition type (both → crossfade, origin-only → fade out, target-only → fade
- * in). Blanks (insert "gap" above a cell) let the user push a track so it fades
- * instead of crossfading with whatever sits opposite. The available pool per
- * column is the scene's family tracks MINUS sources already consumed by a
- * committed crossfade/fade (`excludeSourceDbIds`).
+ * in). Insert a "gap" above a cell to push a track so it fades instead of
+ * crossfading with whatever sits opposite. The pool per column is the scene's
+ * family tracks MINUS sources already consumed by a committed crossfade/fade
+ * (`excludeSourceDbIds`).
  *
- * Per-row Create reuses the panel's EXISTING orchestration via `onCreateCrossfade`
- * / `onCreateFade` (the same callbacks the two modals used). On success the source
- * leaves the pool (the panel updates `excludeSourceDbIds`) and the row collapses;
- * deleting the committed crossfade/fade on the deck returns the source here. The
- * staged (not-yet-created) arrangement persists to the transition scene's
- * plugin_data so the user can close and keep iterating.
+ * Per-row **Create** reuses the panel's EXISTING orchestration via `onCreateCrossfade`
+ * / `onCreateFade`. Creates run CONCURRENTLY — fire several at once, or **Create all**
+ * (a bounded pool). Each in-flight row shows its own progress bar and locks just its
+ * own cells; the rest of the board stays editable. On success the source leaves the
+ * pool (the panel updates `excludeSourceDbIds`) and the row collapses; deleting the
+ * committed crossfade/fade on the deck returns the source here. The staged
+ * arrangement persists to the transition scene's plugin_data so it survives toggles.
  *
- * @since SDK 2.29.0
+ * @since SDK 2.29.0 (modal); inline toggle view + concurrent creation since 2.30.0.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { Modal } from './Modal';
 import { SorceryProgressBar } from './SorceryProgressBar';
 import { moveItem } from '../hooks/useTrackReorder';
 import type { PluginHost, SceneFamilyTrack } from '../types/plugin-sdk.types';
@@ -39,12 +41,15 @@ import { type FadeDirection, type FadeGesture, defaultFadeGesture } from '../fad
 import {
   TRANSITION_DESIGNER_DRAFT_KEY,
   type TransitionRowType,
+  type DesignerRowSlots,
   asTransitionDesignerDraft,
   reconcileSlots,
   buildRowSlots,
   normalizeSlots,
   padPair,
   slotsEqual,
+  rowKey,
+  dbIdsFromKeys,
 } from '../transition-designer-meta';
 
 type Column = 'origin' | 'target';
@@ -52,8 +57,6 @@ type Column = 'origin' | 'target';
 export interface TransitionDesignerProps {
   /** Scoped host — the board calls listSceneFamilyTracks / getSceneName itself. */
   host: PluginHost;
-  /** Controls visibility (the panel owns open/closed from its header button). */
-  open: boolean;
   /** DB id of the transition's FROM (origin) scene. */
   fromSceneId: string;
   /** DB id of the transition's TO (target) scene. */
@@ -66,16 +69,13 @@ export interface TransitionDesignerProps {
    * deck row is deleted the panel drops the id and the source reappears here.
    */
   excludeSourceDbIds?: readonly string[];
-  /** Close handler (Escape, backdrop, or the close button). */
-  onClose: () => void;
   /**
    * Build a crossfade pair — the panel's existing handler (create two tracks, one
-   * morphed clip, copy each preset). Should reject on failure.
+   * morphed clip, copy each preset). Should reject on failure. Safe to call
+   * concurrently.
    */
   onCreateCrossfade: (origin: CrossfadeSelection, target: CrossfadeSelection) => Promise<void>;
-  /**
-   * Build a one-sided fade — the panel's existing handler. Should reject on failure.
-   */
+  /** Build a one-sided fade — the panel's existing handler. Should reject on failure. */
   onCreateFade: (
     selection: FadeSelection,
     direction: FadeDirection,
@@ -95,6 +95,8 @@ type LoadState =
 /** ~time the LLM morph/fade generation takes, for the time-based progress bar. */
 const CROSSFADE_ESTIMATE_MS = 15000;
 const FADE_ESTIMATE_MS = 11000;
+/** Bounded fan-out for "Create all" (the user wants ~3-5 at once). */
+const CREATE_ALL_CONCURRENCY = 5;
 
 const TYPE_LABEL: Record<TransitionRowType, string> = {
   crossfade: 'Crossfade',
@@ -109,26 +111,26 @@ function shortId(dbId: string): string {
 
 export function TransitionDesigner({
   host,
-  open,
   fromSceneId,
   toSceneId,
   transitionSceneId,
   excludeSourceDbIds,
-  onClose,
   onCreateCrossfade,
   onCreateFade,
   familyLabel,
   testIdPrefix = 'transition-designer',
-}: TransitionDesignerProps): React.ReactElement | null {
+}: TransitionDesignerProps): React.ReactElement {
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   const [fromName, setFromName] = useState<string | null>(null);
   const [toName, setToName] = useState<string | null>(null);
-  // Columns are kept padded to equal length (for aligned rendering + drag); they
-  // are trimmed only at persist time (normalizeSlots).
+  // Columns are kept padded to equal length (aligned rendering + drag); trimmed
+  // only at persist time (normalizeSlots).
   const [originSlots, setOriginSlots] = useState<(string | null)[]>([]);
   const [targetSlots, setTargetSlots] = useState<(string | null)[]>([]);
-  const [creatingRow, setCreatingRow] = useState<number | null>(null);
-  const [rowError, setRowError] = useState<{ row: number; message: string } | null>(null);
+  // In-flight creates, keyed by a STABLE row key (source dbIds, not index) so
+  // several can run at once and a reorder mid-create still tracks the right row.
+  const [creatingKeys, setCreatingKeys] = useState<Set<string>>(() => new Set());
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
 
   // Latest props/state read inside effects + handlers without widening deps.
   const excludeRef = useRef(excludeSourceDbIds);
@@ -137,6 +139,8 @@ export function TransitionDesigner({
   originSlotsRef.current = originSlots;
   const targetSlotsRef = useRef(targetSlots);
   targetSlotsRef.current = targetSlots;
+  const creatingKeysRef = useRef(creatingKeys);
+  creatingKeysRef.current = creatingKeys;
 
   // Drag state: a ref drives the drop computation (no stale closure); the matching
   // React state drives the dim/highlight visuals.
@@ -155,6 +159,10 @@ export function TransitionDesigner({
   );
   const originById = useMemo(() => new Map(originPool.map((t) => [t.dbId, t])), [originPool]);
   const targetById = useMemo(() => new Map(targetPool.map((t) => [t.dbId, t])), [targetPool]);
+  const originByIdRef = useRef(originById);
+  originByIdRef.current = originById;
+  const targetByIdRef = useRef(targetById);
+  targetByIdRef.current = targetById;
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!host.listSceneFamilyTracks) {
@@ -193,18 +201,14 @@ export function TransitionDesigner({
     }
   }, [host, fromSceneId, toSceneId, transitionSceneId]);
 
-  // Fetch on open; reset transient state.
+  // Fetch on mount (the panel mounts this only when the Transition view is active)
+  // and whenever the bridged scenes change.
   useEffect(() => {
-    if (open) {
-      setRowError(null);
-      setCreatingRow(null);
-      void refresh();
-    }
-  }, [open, refresh]);
+    void refresh();
+  }, [refresh]);
 
   // Keep the columns in sync with the pool: drop sources consumed by a just-created
   // crossfade/fade (excludeSourceDbIds grew) and append any newly-added tracks.
-  // Reads current slots via refs so it only re-runs when the pool changes.
   useEffect(() => {
     if (load.status !== 'ready') return;
     const [po, pt] = padPair(
@@ -263,58 +267,87 @@ export function TransitionDesigner({
   );
 
   const rows = useMemo(() => buildRowSlots(originSlots, targetSlots), [originSlots, targetSlots]);
+  // Source dbIds with a create in flight — their cells lock (no drag / gap edits).
+  const creatingDbIds = useMemo(() => dbIdsFromKeys(creatingKeys), [creatingKeys]);
+  const eligibleCount = useMemo(
+    () => rows.filter((r) => { const k = rowKey(r); return k !== null && !creatingKeys.has(k); }).length,
+    [rows, creatingKeys],
+  );
 
-  const handleCreateRow = useCallback(
-    async (rowIndex: number): Promise<void> => {
-      const row = rows[rowIndex];
-      if (!row || !row.type) return;
-      setRowError(null);
-      setCreatingRow(rowIndex);
+  // Create ONE row. Concurrency-safe: keyed by source dbIds; reuses the panel's
+  // existing crossfade/fade orchestration. Reads latest maps/keys via refs.
+  const createRow = useCallback(
+    async (row: DesignerRowSlots): Promise<void> => {
+      const key = rowKey(row);
+      if (!key || !row.type || creatingKeysRef.current.has(key)) return;
+      setCreatingKeys((prev) => new Set(prev).add(key));
+      setRowErrors((prev) => {
+        if (!(key in prev)) return prev;
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
       try {
         if (row.type === 'crossfade') {
-          const o = row.originId ? originById.get(row.originId) : undefined;
-          const t = row.targetId ? targetById.get(row.targetId) : undefined;
+          const o = row.originId ? originByIdRef.current.get(row.originId) : undefined;
+          const t = row.targetId ? targetByIdRef.current.get(row.targetId) : undefined;
           if (!o || !t) throw new Error('Track is no longer available — refresh and retry.');
           await onCreateCrossfade(
             { dbId: o.dbId, name: o.name, role: o.role },
             { dbId: t.dbId, name: t.name, role: t.role },
           );
         } else if (row.type === 'fade-out') {
-          const o = row.originId ? originById.get(row.originId) : undefined;
+          const o = row.originId ? originByIdRef.current.get(row.originId) : undefined;
           if (!o) throw new Error('Track is no longer available — refresh and retry.');
           await onCreateFade({ dbId: o.dbId, name: o.name, role: o.role }, 'out', defaultFadeGesture(o.role));
         } else {
-          const t = row.targetId ? targetById.get(row.targetId) : undefined;
+          const t = row.targetId ? targetByIdRef.current.get(row.targetId) : undefined;
           if (!t) throw new Error('Track is no longer available — refresh and retry.');
           await onCreateFade({ dbId: t.dbId, name: t.name, role: t.role }, 'in', defaultFadeGesture(t.role));
         }
-        // Success: the source(s) are now in excludeSourceDbIds → the sync effect
-        // drops the row when the panel re-renders. Nothing else to do.
       } catch (err: unknown) {
-        setRowError({
-          row: rowIndex,
-          message: err instanceof Error ? err.message : 'Failed to create transition.',
-        });
+        setRowErrors((prev) => ({
+          ...prev,
+          [key]: err instanceof Error ? err.message : 'Failed to create transition.',
+        }));
       } finally {
-        setCreatingRow(null);
+        setCreatingKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
       }
     },
-    [rows, originById, targetById, onCreateCrossfade, onCreateFade],
+    [onCreateCrossfade, onCreateFade],
   );
 
-  const handleClose = useCallback((): void => {
-    if (creatingRow === null) onClose();
-  }, [creatingRow, onClose]);
+  // Fire every eligible row through a bounded concurrency pool.
+  const createAll = useCallback(async (): Promise<void> => {
+    const eligible = buildRowSlots(originSlotsRef.current, targetSlotsRef.current).filter((r) => {
+      const k = rowKey(r);
+      return k !== null && !creatingKeysRef.current.has(k);
+    });
+    if (eligible.length === 0) return;
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < eligible.length) {
+        const row = eligible[cursor];
+        cursor += 1;
+        await createRow(row);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(CREATE_ALL_CONCURRENCY, eligible.length) }, () => worker()),
+    );
+  }, [createRow]);
 
   const fromLabel = fromName ?? 'origin';
   const toLabel = toName ?? 'target';
-  const busy = creatingRow !== null;
-
-  if (!open) return null;
 
   const cellDragProps = (
     col: Column,
     index: number,
+    locked: boolean,
   ): {
     draggable: boolean;
     onDragStart: (e: DragEvent<HTMLElement>) => void;
@@ -324,8 +357,9 @@ export function TransitionDesigner({
     onDragLeave: () => void;
     onDrop: (e: DragEvent<HTMLElement>) => void;
   } => ({
-    draggable: !busy,
+    draggable: !locked,
     onDragStart: (e) => {
+      if (locked) return;
       dragRef.current = { col, index };
       setDragging({ col, index });
       if (e.dataTransfer) {
@@ -366,6 +400,7 @@ export function TransitionDesigner({
   const renderCell = (col: Column, index: number, slotId: string | null): React.ReactElement => {
     const byId = col === 'origin' ? originById : targetById;
     const track = slotId ? byId.get(slotId) : undefined;
+    const locked = slotId !== null && creatingDbIds.has(slotId);
     const isDragging = dragging?.col === col && dragging.index === index;
     const isDragTarget = dragOver?.col === col && dragOver.index === index && !isDragging;
     const base =
@@ -375,10 +410,9 @@ export function TransitionDesigner({
       : 'border-sas-border bg-sas-panel';
 
     if (slotId === null) {
-      // Explicit blank spacer — a gap so the opposite track fades.
       return (
         <div
-          {...cellDragProps(col, index)}
+          {...cellDragProps(col, index, false)}
           data-testid={`${testIdPrefix}-${col}-gap-${index}`}
           className={`${base} ${tone} border-dashed flex items-center justify-between ${
             isDragging ? 'opacity-40' : 'opacity-70'
@@ -389,9 +423,8 @@ export function TransitionDesigner({
             type="button"
             data-testid={`${testIdPrefix}-${col}-remove-gap-${index}`}
             onClick={() => removeGap(col, index)}
-            disabled={busy}
             title="Remove gap"
-            className="text-[10px] text-sas-muted hover:text-sas-danger disabled:opacity-50"
+            className="text-[10px] text-sas-muted hover:text-sas-danger"
           >
             ✕
           </button>
@@ -403,10 +436,12 @@ export function TransitionDesigner({
     const meta = track ? [track.role, shortId(track.dbId)].filter(Boolean).join(' · ') : 'missing';
     return (
       <div
-        {...cellDragProps(col, index)}
+        {...cellDragProps(col, index, locked)}
         data-testid={`${testIdPrefix}-${col}-cell-${slotId}`}
         data-value={slotId}
-        className={`${base} ${tone} ${isDragging ? 'opacity-40' : ''} cursor-grab active:cursor-grabbing`}
+        className={`${base} ${tone} ${isDragging ? 'opacity-40' : ''} ${
+          locked ? 'opacity-60' : 'cursor-grab active:cursor-grabbing'
+        }`}
         title={track ? track.dbId : 'Track no longer available'}
       >
         <div className="flex items-start gap-1">
@@ -421,9 +456,9 @@ export function TransitionDesigner({
             type="button"
             data-testid={`${testIdPrefix}-${col}-insert-gap-${index}`}
             onClick={() => insertGapAbove(col, index)}
-            disabled={busy}
+            disabled={locked}
             title="Insert a gap above (make this a fade)"
-            className="text-[10px] text-sas-muted opacity-0 group-hover:opacity-100 hover:text-sas-accent disabled:opacity-50"
+            className="text-[10px] text-sas-muted opacity-0 group-hover:opacity-100 hover:text-sas-accent disabled:opacity-30"
           >
             +gap
           </button>
@@ -433,156 +468,139 @@ export function TransitionDesigner({
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={handleClose}
-      testIdPrefix={testIdPrefix}
-      closeOnBackdrop={!busy}
-      closeOnEscape={!busy}
-    >
-      <div
-        className="bg-sas-panel border border-sas-border rounded-md shadow-xl w-[min(1000px,95vw)] max-h-[88vh] flex flex-col"
-        onClick={(e: React.MouseEvent) => e.stopPropagation()}
-        data-testid={`${testIdPrefix}-box`}
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 p-4 border-b border-sas-border shrink-0">
-          <div>
-            <h3 className="text-sm font-bold text-sas-text">
-              Transition Designer{familyLabel ? ` — ${familyLabel}` : ''}
-            </h3>
-            <p className="text-[11px] text-sas-muted mt-0.5">
-              <span className="text-sas-text">{fromLabel}</span> →{' '}
-              <span className="text-sas-text">{toLabel}</span> · line up a track on each side to
-              crossfade them; leave one side blank (or insert a gap) to fade.
-            </p>
-          </div>
+    <div className="space-y-2" data-testid={`${testIdPrefix}-box`}>
+      {/* Header: hint + Create all */}
+      <div className="flex items-center justify-between gap-3 pb-1 border-b border-sas-border">
+        <p className="text-[11px] text-sas-muted leading-snug min-w-0">
+          <span className="text-sas-text">{fromLabel}</span> →{' '}
+          <span className="text-sas-text">{toLabel}</span>
+          {familyLabel ? ` · ${familyLabel}` : ''} · line up a track on each side to crossfade;
+          leave one blank (or insert a gap) to fade.
+        </p>
+        <div className="flex items-center gap-2 shrink-0">
+          {creatingKeys.size > 0 && (
+            <span className="text-[10px] text-sas-accent whitespace-nowrap" data-testid={`${testIdPrefix}-creating-count`}>
+              {creatingKeys.size} creating…
+            </span>
+          )}
           <button
             type="button"
-            data-testid={`${testIdPrefix}-close`}
-            onClick={handleClose}
-            disabled={busy}
-            className="text-sas-muted hover:text-sas-text text-sm leading-none disabled:opacity-50"
-            title={busy ? 'Finish creating first' : 'Close'}
+            data-testid={`${testIdPrefix}-create-all`}
+            onClick={createAll}
+            disabled={eligibleCount === 0}
+            title="Create every staged transition at once (runs several concurrently)"
+            className={`px-2 py-0.5 text-[10px] font-medium rounded-sm border transition-colors whitespace-nowrap ${
+              eligibleCount > 0
+                ? 'bg-sas-accent/20 border-sas-accent text-sas-accent hover:bg-sas-accent hover:text-sas-bg'
+                : 'bg-sas-panel border-sas-border text-sas-muted/50 cursor-not-allowed'
+            }`}
           >
-            ✕
-          </button>
-        </div>
-
-        {/* Column headings */}
-        <div className="grid grid-cols-[1fr_auto_1fr] gap-2 px-4 pt-3 shrink-0">
-          <span className="text-[10px] uppercase tracking-wide text-sas-muted truncate">
-            Origin ({fromLabel})
-          </span>
-          <span className="text-[10px] uppercase tracking-wide text-sas-muted text-center px-2">
-            Transition
-          </span>
-          <span className="text-[10px] uppercase tracking-wide text-sas-muted truncate text-right">
-            Target ({toLabel})
-          </span>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4 pt-2 space-y-2 min-h-[120px]">
-          {load.status === 'loading' && (
-            <div className="text-xs text-sas-muted py-8 text-center">Loading tracks…</div>
-          )}
-          {load.status === 'error' && (
-            <div className="text-xs text-sas-danger py-8 text-center" data-testid={`${testIdPrefix}-error`}>
-              {load.message}
-            </div>
-          )}
-          {load.status === 'ready' &&
-            (rows.length === 0 ? (
-              <div className="text-xs text-sas-muted py-8 text-center" data-testid={`${testIdPrefix}-empty`}>
-                No tracks to arrange in this panel for either scene. Add tracks to {fromLabel} or{' '}
-                {toLabel} first (or free one by deleting an existing crossfade/fade).
-              </div>
-            ) : (
-              rows.map((row, i) => {
-                const isCreatingThis = creatingRow === i;
-                const canCreate = !busy && !!row.type;
-                return (
-                  <div
-                    key={i}
-                    data-testid={`${testIdPrefix}-row-${i}`}
-                    className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center"
-                  >
-                    {renderCell('origin', i, row.originId)}
-
-                    {/* Center: type + create / progress */}
-                    <div className="w-[160px] flex flex-col items-center gap-1">
-                      {row.type ? (
-                        <span
-                          data-testid={`${testIdPrefix}-type-${i}`}
-                          className={`text-[10px] font-medium px-1.5 py-0.5 rounded-sm border ${
-                            row.type === 'crossfade'
-                              ? 'border-sas-accent/50 text-sas-accent'
-                              : 'border-sas-border text-sas-muted'
-                          }`}
-                        >
-                          {TYPE_LABEL[row.type]}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-sas-muted/50">—</span>
-                      )}
-                      {isCreatingThis ? (
-                        <div className="w-full">
-                          <SorceryProgressBar
-                            isLoading
-                            heightClass="h-5"
-                            statusText="CREATING"
-                            estimatedDurationMs={
-                              row.type === 'crossfade' ? CROSSFADE_ESTIMATE_MS : FADE_ESTIMATE_MS
-                            }
-                          />
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          data-testid={`${testIdPrefix}-create-${i}`}
-                          onClick={() => handleCreateRow(i)}
-                          disabled={!canCreate}
-                          className={`w-full px-2 py-0.5 text-[10px] font-medium rounded-sm border transition-colors ${
-                            canCreate
-                              ? 'bg-sas-accent/20 border-sas-accent text-sas-accent hover:bg-sas-accent hover:text-sas-bg'
-                              : 'bg-sas-panel border-sas-border text-sas-muted/50 cursor-not-allowed'
-                          }`}
-                        >
-                          Create
-                        </button>
-                      )}
-                      {rowError?.row === i && (
-                        <span
-                          data-testid={`${testIdPrefix}-row-error-${i}`}
-                          className="text-[10px] text-sas-danger text-center leading-tight"
-                        >
-                          {rowError.message}
-                        </span>
-                      )}
-                    </div>
-
-                    {renderCell('target', i, row.targetId)}
-                  </div>
-                );
-              })
-            ))}
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-2 p-3 border-t border-sas-border shrink-0">
-          <button
-            type="button"
-            data-testid={`${testIdPrefix}-done`}
-            onClick={handleClose}
-            disabled={busy}
-            className="px-3 py-1 text-xs rounded-sm border border-sas-border text-sas-muted hover:text-sas-text disabled:opacity-50"
-          >
-            Done
+            Create all{eligibleCount > 0 ? ` (${eligibleCount})` : ''}
           </button>
         </div>
       </div>
-    </Modal>
+
+      {/* Column headings */}
+      <div className="grid grid-cols-[1fr_auto_1fr] gap-2">
+        <span className="text-[10px] uppercase tracking-wide text-sas-muted truncate">
+          Origin ({fromLabel})
+        </span>
+        <span className="text-[10px] uppercase tracking-wide text-sas-muted text-center px-2">
+          Transition
+        </span>
+        <span className="text-[10px] uppercase tracking-wide text-sas-muted truncate text-right">
+          Target ({toLabel})
+        </span>
+      </div>
+
+      {/* Body */}
+      {load.status === 'loading' && (
+        <div className="text-xs text-sas-muted py-6 text-center">Loading tracks…</div>
+      )}
+      {load.status === 'error' && (
+        <div className="text-xs text-sas-danger py-6 text-center" data-testid={`${testIdPrefix}-error`}>
+          {load.message}
+        </div>
+      )}
+      {load.status === 'ready' &&
+        (rows.length === 0 ? (
+          <div className="text-xs text-sas-muted py-6 text-center" data-testid={`${testIdPrefix}-empty`}>
+            No tracks to arrange in this panel for either scene. Add tracks to {fromLabel} or {toLabel}{' '}
+            first (or free one by deleting an existing crossfade/fade).
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {rows.map((row, i) => {
+              const key = rowKey(row);
+              const isCreatingThis = key !== null && creatingKeys.has(key);
+              const errMsg = key !== null ? rowErrors[key] : undefined;
+              return (
+                <div
+                  key={i}
+                  data-testid={`${testIdPrefix}-row-${i}`}
+                  className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center"
+                >
+                  {renderCell('origin', i, row.originId)}
+
+                  {/* Center: type + create / progress */}
+                  <div className="w-[160px] flex flex-col items-center gap-1">
+                    {row.type ? (
+                      <span
+                        data-testid={`${testIdPrefix}-type-${i}`}
+                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded-sm border ${
+                          row.type === 'crossfade'
+                            ? 'border-sas-accent/50 text-sas-accent'
+                            : 'border-sas-border text-sas-muted'
+                        }`}
+                      >
+                        {TYPE_LABEL[row.type]}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-sas-muted/50">—</span>
+                    )}
+                    {isCreatingThis ? (
+                      <div className="w-full">
+                        <SorceryProgressBar
+                          isLoading
+                          heightClass="h-5"
+                          statusText="CREATING"
+                          estimatedDurationMs={
+                            row.type === 'crossfade' ? CROSSFADE_ESTIMATE_MS : FADE_ESTIMATE_MS
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        data-testid={`${testIdPrefix}-create-${i}`}
+                        onClick={() => createRow(row)}
+                        disabled={!row.type}
+                        className={`w-full px-2 py-0.5 text-[10px] font-medium rounded-sm border transition-colors ${
+                          row.type
+                            ? 'bg-sas-accent/20 border-sas-accent text-sas-accent hover:bg-sas-accent hover:text-sas-bg'
+                            : 'bg-sas-panel border-sas-border text-sas-muted/50 cursor-not-allowed'
+                        }`}
+                      >
+                        Create
+                      </button>
+                    )}
+                    {errMsg && (
+                      <span
+                        data-testid={`${testIdPrefix}-row-error-${i}`}
+                        className="text-[10px] text-sas-danger text-center leading-tight"
+                      >
+                        {errMsg}
+                      </span>
+                    )}
+                  </div>
+
+                  {renderCell('target', i, row.targetId)}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+    </div>
   );
 }
 

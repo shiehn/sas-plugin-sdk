@@ -206,6 +206,8 @@ export {
   padSlots,
   padPair,
   slotsEqual,
+  rowKey,
+  dbIdsFromKeys,
   type TransitionDesignerDraft,
   type TransitionRowType,
   type DesignerRowSlots,

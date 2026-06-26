@@ -168,3 +168,39 @@ export function slotsEqual(a: readonly (string | null)[], b: readonly (string | 
   }
   return true;
 }
+
+/**
+ * Stable key identifying an in-flight create, derived from the row's SOURCE dbIds
+ * (not its row index) — so reordering or inserting a gap mid-create still maps the
+ * progress indicator to the right row, and concurrent creates never collide. dbIds
+ * are UUIDs, so `|` is a safe origin/target separator. `null` for an empty row.
+ *
+ * @since SDK 2.30.0
+ */
+export function rowKey(row: DesignerRowSlots): string | null {
+  if (row.type === 'crossfade') return `xf:${row.originId}|${row.targetId}`;
+  if (row.type === 'fade-out') return `fo:${row.originId}`;
+  if (row.type === 'fade-in') return `fi:${row.targetId}`;
+  return null;
+}
+
+/**
+ * The set of source dbIds referenced by a collection of in-flight {@link rowKey}s —
+ * used to lock those cells (no drag / gap edits) while their create runs.
+ *
+ * @since SDK 2.30.0
+ */
+export function dbIdsFromKeys(keys: Iterable<string>): Set<string> {
+  const out = new Set<string>();
+  for (const k of keys) {
+    const body = k.slice(3); // strip the 3-char "xf:" / "fo:" / "fi:" tag
+    if (k.startsWith('xf:')) {
+      const sep = body.indexOf('|');
+      out.add(body.slice(0, sep));
+      out.add(body.slice(sep + 1));
+    } else {
+      out.add(body);
+    }
+  }
+  return out;
+}
