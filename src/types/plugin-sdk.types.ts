@@ -1070,6 +1070,14 @@ export interface PluginHost {
   /** Get all sample tracks in the active scene. Re-establishes ownership. */
   getPluginSampleTracks(): Promise<PluginSampleTrackInfo[]>;
 
+  /**
+   * Resolve a sample-track row id (as returned by `listSceneFamilyTracks`) back
+   * to its library `sampleId` + metadata, so a loop can be re-created in another
+   * scene (transition crossfade/fade). Returns null if not a sample track.
+   * @since SDK 2.31.0
+   */
+  getSampleTrackInfo?(dbId: string): Promise<{ sampleId: string; fileName?: string; bpm?: number; key?: string } | null>;
+
   /** Time-stretch a sample to a target BPM. Returns the new sample info. */
   timeStretchSample(sampleId: string, targetBpm: number): Promise<PluginSampleInfo>;
 
