@@ -388,16 +388,16 @@ export function TrackRow({
                 Copy
               </button>
             )}
+            {/* Mute stays interactive during generation: users often regenerate
+                because they dislike the current sound and want to silence the
+                track while the new MIDI conjures. Solo + the rest stay disabled. */}
             <button
               data-testid="sdk-mute-button"
               onClick={onMuteToggle}
-              disabled={isGenerating}
               className={`px-1.5 py-0.5 text-xs font-bold rounded transition-colors ${
-                isGenerating
-                  ? 'bg-sas-panel text-sas-muted/50 cursor-not-allowed'
-                  : isMuted
-                    ? 'bg-red-600 text-white'
-                    : 'bg-sas-panel-alt text-sas-muted hover:bg-sas-border'
+                isMuted
+                  ? 'bg-red-600 text-white'
+                  : 'bg-sas-panel-alt text-sas-muted hover:bg-sas-border'
               }`}
               title={isMuted ? 'Unmute track' : 'Mute track'}
             >
