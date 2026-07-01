@@ -162,6 +162,8 @@ export {
   EQUAL_POWER_GAIN,
   parseCrossfadePairs,
   asCrossfadeMeta,
+  soundIdentity,
+  hashString,
   buildCrossfadeVolumeCurves,
   type CrossfadeSlot,
   type CrossfadeMeta,
@@ -189,6 +191,33 @@ export {
   type CrossfadeModalProps,
   type CrossfadeSelection,
 } from './components/CrossfadeModal';
+// Transition Designer — the multi-row, persistent successor to CrossfadeModal +
+// FadeModal: a per-panel staging board that lays out every A→B pairing at once.
+// Reuses the panel's existing create/delete orchestration. Since 2.29.0.
+export {
+  TransitionDesigner,
+  type TransitionDesignerProps,
+} from './components/TransitionDesigner';
+export {
+  TRANSITION_DESIGNER_DRAFT_KEY,
+  rowType,
+  asTransitionDesignerDraft,
+  reconcileSlots,
+  buildRowSlots,
+  normalizeSlots,
+  padSlots,
+  padPair,
+  slotsEqual,
+  rowKey,
+  dbIdsFromKeys,
+  AUDIO_EFFECTS,
+  AUDIO_EFFECT_LABEL,
+  asAudioEffect,
+  type TransitionDesignerDraft,
+  type TransitionRowType,
+  type DesignerRowSlots,
+  type AudioEffect,
+} from './transition-designer-meta';
 export { ConfirmDialog, type ConfirmDialogProps } from './components/ConfirmDialog';
 export { Modal, type ModalProps } from './components/Modal';
 export {

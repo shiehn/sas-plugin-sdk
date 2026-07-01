@@ -35,6 +35,13 @@ export type FadeGesture = 'volume' | 'build';
 export interface FadeMeta {
   direction: FadeDirection;
   gesture: FadeGesture;
+  /**
+   * Audio transition variant for one-sided LOOP transitions. `'fade'` (default,
+   * and the only value MIDI panels write) is a plain level ramp; `stutter` /
+   * `chopped` re-render the loop's audio, `delay` adds a delay-throw FX. Shown as
+   * a badge on the row. @since SDK 2.32.0
+   */
+  effect?: 'fade' | 'stutter' | 'chopped' | 'delay';
   /** DB id of the SOURCE track this fade's preset/sample + pattern was seeded from. */
   sourceTrackDbId: string;
   /** DB id of the scene the source track lives in (the from/to scene). */
@@ -59,9 +66,14 @@ export function asFadeMeta(val: unknown): FadeMeta | null {
   const m = val as Partial<FadeMeta>;
   if (m.direction !== 'in' && m.direction !== 'out') return null;
   if (m.gesture !== 'volume' && m.gesture !== 'build') return null;
+  const effect =
+    m.effect === 'stutter' || m.effect === 'chopped' || m.effect === 'delay' || m.effect === 'fade'
+      ? m.effect
+      : undefined;
   return {
     direction: m.direction,
     gesture: m.gesture,
+    effect,
     sourceTrackDbId: typeof m.sourceTrackDbId === 'string' ? m.sourceTrackDbId : '',
     sourceSceneId: typeof m.sourceSceneId === 'string' ? m.sourceSceneId : '',
     sourceName: typeof m.sourceName === 'string' ? m.sourceName : '',

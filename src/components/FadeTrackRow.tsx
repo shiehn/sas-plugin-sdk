@@ -44,6 +44,8 @@ export interface FadeTrackRowProps {
   direction: FadeDirection;
   /** How the fade is shaped — shown read-only (volume = level ramp, build = notes). */
   gesture: FadeGesture;
+  /** Audio transition variant — relabels the badge (Stutter/Chopped/Delay). @since SDK 2.32.0 */
+  effect?: 'fade' | 'stutter' | 'chopped' | 'delay';
   /** Fade position 0..1 — WHERE in time the fade sits. Defaults centered. */
   sliderPos?: number;
   /** Toggle mute. */
@@ -96,6 +98,7 @@ export function FadeTrackRow({
   layer,
   direction,
   gesture,
+  effect,
   sliderPos = 0.5,
   onMuteToggle,
   onSoloToggle,
@@ -111,7 +114,8 @@ export function FadeTrackRow({
   // Slider end labels: a fade-in goes (silent → track), a fade-out goes (track → silent).
   const leftLabel = direction === 'in' ? '(silent)' : (layer.sourceName ?? layer.name);
   const rightLabel = direction === 'in' ? (layer.sourceName ?? layer.name) : '(silent)';
-  const badge = direction === 'in' ? '↗ Fade in' : '↘ Fade out';
+  const verb = effect && effect !== 'fade' ? effect.charAt(0).toUpperCase() + effect.slice(1) : 'Fade';
+  const badge = direction === 'in' ? `↗ ${verb} in` : `↘ ${verb} out`;
 
   return (
     <div

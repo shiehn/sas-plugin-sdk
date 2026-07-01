@@ -464,6 +464,19 @@ export interface PluginHost {
   /** Get a plugin's RAW VST3/AU state (see setRawPluginState). @since SDK 2.15.0 */
   getRawPluginState(trackId: string, pluginIndex: number): Promise<string>;
 
+  /**
+   * Persist a preset as the track's durable sound identity (DB `preset_state`,
+   * the shape getTrackSound reads back). setPluginState/setRawPluginState are
+   * engine-only — a copied sound that is never persisted has no identity, so
+   * drift checks (e.g. the transition-designer preset re-sync) can never
+   * observe convergence. Call after applying a copied state to a layer track.
+   * @since SDK 2.34.0
+   */
+  persistTrackPresetState?(
+    trackId: string,
+    preset: { state: string; stateType: 'raw' | 'valuetree'; name?: string }
+  ): Promise<void>;
+
   /** List plugins currently loaded on a track. */
   getTrackPlugins(trackId: string): Promise<PluginSynthInfo[]>;
 
@@ -1069,6 +1082,24 @@ export interface PluginHost {
 
   /** Get all sample tracks in the active scene. Re-establishes ownership. */
   getPluginSampleTracks(): Promise<PluginSampleTrackInfo[]>;
+
+  /**
+   * Resolve a sample-track row id (as returned by `listSceneFamilyTracks`) back
+   * to its library `sampleId` + metadata, so a loop can be re-created in another
+   * scene (transition crossfade/fade). Returns null if not a sample track.
+   * @since SDK 2.31.0
+   */
+  getSampleTrackInfo?(dbId: string): Promise<{ sampleId: string; fileName?: string; bpm?: number; key?: string } | null>;
+
+  /**
+   * Render an audio transition effect onto a sample (offline DSP via the audio
+   * tool), returning a NEW library sample to place. Used for stutter / chopped
+   * loop transitions. @since SDK 2.32.0
+   */
+  renderSampleEffect?(
+    sampleId: string,
+    spec: { effect: 'stutter' | 'chopped'; bars: number; bpm: number; repeats?: number; slices?: number },
+  ): Promise<PluginSampleInfo>;
 
   /** Time-stretch a sample to a target BPM. Returns the new sample info. */
   timeStretchSample(sampleId: string, targetBpm: number): Promise<PluginSampleInfo>;

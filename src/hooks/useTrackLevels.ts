@@ -27,6 +27,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PluginHost, PluginTrackLevel } from '../types/plugin-sdk.types';
 
+/** [MeterDiagR] per-trackId throttle for the dead-meter renderer-side diagnostic. */
+const meterDiagRLast = new Map<string, number>();
+
 /** Polling cadence — matches the recording input meter (~30Hz). */
 const POLL_INTERVAL_MS = 33;
 /** Slow idle re-check while the window is hidden (polling is paused). */
@@ -270,6 +273,15 @@ export function useTrackMeter(
 
     const update = (): void => {
       const level = handle.getLevel(trackId);
+      // [MeterDiagR] throttled per-trackId: does THIS row's lookup HIT or MISS?
+      // Pairs with the host [MeterDiag] to prove whether the id the renderer looks
+      // up matches the id the levels are keyed by.
+      const dNow = Date.now();
+      if ((meterDiagRLast.get(trackId) ?? 0) < dNow - 3000) {
+        meterDiagRLast.set(trackId, dNow);
+        // eslint-disable-next-line no-console
+        console.log(`[MeterDiagR] lookup trackId=${trackId} → ${level === null ? 'MISS (no level for this id)' : 'hit'}`);
+      }
       const now = performance.now();
       const dtSec = lastTickRef.current ? Math.max(0, (now - lastTickRef.current) / 1000) : 0;
       lastTickRef.current = now;
