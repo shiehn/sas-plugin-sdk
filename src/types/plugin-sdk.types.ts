@@ -464,6 +464,19 @@ export interface PluginHost {
   /** Get a plugin's RAW VST3/AU state (see setRawPluginState). @since SDK 2.15.0 */
   getRawPluginState(trackId: string, pluginIndex: number): Promise<string>;
 
+  /**
+   * Persist a preset as the track's durable sound identity (DB `preset_state`,
+   * the shape getTrackSound reads back). setPluginState/setRawPluginState are
+   * engine-only — a copied sound that is never persisted has no identity, so
+   * drift checks (e.g. the transition-designer preset re-sync) can never
+   * observe convergence. Call after applying a copied state to a layer track.
+   * @since SDK 2.34.0
+   */
+  persistTrackPresetState?(
+    trackId: string,
+    preset: { state: string; stateType: 'raw' | 'valuetree'; name?: string }
+  ): Promise<void>;
+
   /** List plugins currently loaded on a track. */
   getTrackPlugins(trackId: string): Promise<PluginSynthInfo[]>;
 
