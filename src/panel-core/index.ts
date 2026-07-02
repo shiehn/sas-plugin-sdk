@@ -25,6 +25,10 @@ export {
   type LLMNoteResponse,
 } from './panel-helpers';
 export {
+  createSurgeSoundAdapter,
+  type SurgeSoundAdapterOverrides,
+} from './surge-sound-adapter';
+export {
   parseTrackGroups,
   resolveTrackGroups,
   type TrackGroupMember,
