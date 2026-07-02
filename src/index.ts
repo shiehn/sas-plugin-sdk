@@ -269,6 +269,15 @@ export { analyzeWavPeak, type PeakAnalysis } from './components/wavPeakAnalyzer'
 export { synthesizeCuePoints, type SynthesizeCuePointsOptions } from './components/synthesizeCuePoints';
 
 // ============================================================================
+// Panel core — the shared generator-panel engine (hook + shell + adapter).
+// Panels supply a GeneratorPanelAdapter; the core owns the duplicated ~85%
+// (load/reconcile, events, prompts, mixer/FX, drawer, piano roll, transition
+// machinery, render skeleton). Since 2.35.0.
+// ============================================================================
+
+export * from './panel-core';
+
+// ============================================================================
 // Hooks
 // ============================================================================
 
