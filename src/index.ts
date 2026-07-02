@@ -12,6 +12,8 @@
 export type {
   GeneratorType,
   InstrumentDescriptor,
+  PanelBusState,
+  PanelBusFxEntry,
   GeneratorPlugin,
   PluginUIProps,
   PluginHost,
@@ -245,6 +247,7 @@ export {
   pitchToName,
 } from './components/PianoRollEditor';
 export { VolumeSlider } from './components/VolumeSlider';
+export { PanelMasterStrip, type PanelMasterStripProps } from './components/PanelMasterStrip';
 export { PanSlider } from './components/PanSlider';
 export { FxToggleBar, type FxToggleBarProps } from './components/FxToggleBar';
 export { SorceryProgressBar, calculateTimeBasedTarget } from './components/SorceryProgressBar';

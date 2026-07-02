@@ -96,6 +96,42 @@ export interface InstrumentDescriptor {
   missing?: boolean;
 }
 
+/**
+ * One FX plugin in a panel bus's chain, as shown to the panel UI. The
+ * engine's Volume & Pan master section and level meter are filtered OUT —
+ * they are the strip's fader/meter, not user FX chips.
+ * @since SDK 2.36.0
+ */
+export interface PanelBusFxEntry {
+  /**
+   * ENGINE chain index — pass this back to remove/bypass/editor calls.
+   * Not necessarily contiguous from 0: hidden master-section plugins share
+   * the same chain.
+   */
+  index: number;
+  /** Scanned plugin id (the picker's `InstrumentDescriptor.pluginId`). */
+  pluginId: string;
+  /** Display name. */
+  name: string;
+  /** False when bypassed. */
+  enabled: boolean;
+}
+
+/**
+ * A panel's mix-bus state for one scene (docs/panel-bus.md §9).
+ * @since SDK 2.36.0
+ */
+export interface PanelBusState {
+  /** False = the panel has no bus in this scene (flat routing). */
+  engaged: boolean;
+  /** Master fader in dB (0 = unity). */
+  volume: number;
+  muted: boolean;
+  soloed: boolean;
+  /** User FX chain, top-to-bottom (master section excluded). */
+  fx: PanelBusFxEntry[];
+}
+
 /** Every generator plugin must implement this interface. */
 export interface GeneratorPlugin {
   /** Unique ID, npm-style scope: '@sas/synth-generator', '@user/my-plugin' */
@@ -670,6 +706,63 @@ export interface PluginHost {
    * origin/target scenes). Optional — callers MUST null-check. @since SDK 2.26.0
    */
   getSceneName?(sceneDbId: string): Promise<string | null>;
+
+  // -------------------------------------------------------------------------
+  // Panel mix bus (docs/panel-bus.md §9) — volume/mute/solo + an FX chain on
+  // the panel's SUMMED output, realized as a marker-identified submix folder
+  // between the scene and the panel's tracks. All methods are scoped to
+  // (this plugin, the active scene); a panel can never address another
+  // panel's bus. Everything is optional — panels MUST feature-gate on
+  // `typeof host.getPanelBusState === 'function'` so they still run on
+  // older hosts. @since SDK 2.36.0
+  // -------------------------------------------------------------------------
+
+  /**
+   * FX plugins available for the bus picker (scanned, non-instrument).
+   * Same descriptor shape as `getAvailableInstruments` by design — the SDK
+   * picker components consume one type.
+   */
+  getAvailableFx?(): Promise<InstrumentDescriptor[]>;
+
+  /**
+   * The panel's bus state for a scene. `{ engaged: false, … }` when the
+   * panel has no bus there — reading NEVER creates one. When engaged, this
+   * also (re)realizes the bus in the engine (adopt-by-marker; rebuild from
+   * the persisted blob only after a `.sasproj` import) and routes any
+   * not-yet-routed panel tracks through it, so calling it from `loadTracks`
+   * is the panel's whole reload story.
+   */
+  getPanelBusState?(sceneId: string): Promise<PanelBusState>;
+
+  /** Master fader in dB (engages the bus on first use). */
+  setPanelBusVolume?(sceneId: string, volumeDb: number): Promise<void>;
+
+  /** Bus mute — silences the whole panel (multiplies with per-track mutes). */
+  setPanelBusMute?(sceneId: string, muted: boolean): Promise<void>;
+
+  /** Panel solo — composes with track solo via the engine's solo rules. */
+  setPanelBusSolo?(sceneId: string, soloed: boolean): Promise<void>;
+
+  /**
+   * Add an FX plugin (by scanned pluginId) to the bus chain, engaging the
+   * bus if needed. Instruments are rejected engine-side.
+   */
+  loadPanelBusFx?(sceneId: string, pluginId: string): Promise<PanelBusFxEntry>;
+
+  /** Remove a bus FX by its `PanelBusFxEntry.index`. */
+  removePanelBusFx?(sceneId: string, fxIndex: number): Promise<void>;
+
+  /** Bypass toggle for a bus FX by its `PanelBusFxEntry.index`. */
+  setPanelBusFxEnabled?(sceneId: string, fxIndex: number, enabled: boolean): Promise<void>;
+
+  /** Open the native editor window for a bus FX. */
+  showPanelBusFxEditor?(sceneId: string, fxIndex: number): Promise<void>;
+
+  /**
+   * Disengage the bus: FX chain removed, tracks reparented back under the
+   * scene, persisted state deleted. The panel returns to flat routing.
+   */
+  disengagePanelBus?(sceneId: string): Promise<void>;
 
   // --- Transport & Playback Events ---
 
