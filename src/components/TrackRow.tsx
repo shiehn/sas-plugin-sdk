@@ -16,7 +16,7 @@ import { TrackDrawer, type DrawerTab } from './TrackDrawer';
 import { ConfirmDialog } from './ConfirmDialog';
 import { TrackMeterStrip } from './TrackMeterStrip';
 import type { TrackLevelsHandle } from '../hooks/useTrackLevels';
-import type { InstrumentDescriptor, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
+import type { InstrumentDescriptor, PluginHost, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
 import type { TrackRowDragProps } from '../hooks/useTrackReorder';
 import { VolumeSlider } from './VolumeSlider';
 import { PanSlider } from './PanSlider';
@@ -86,6 +86,10 @@ export interface SDKTrackRowProps {
   onFxPresetChange?: (cat: FxCategory, idx: number) => void;
   /** FX dry/wet */
   onFxDryWetChange?: (cat: FxCategory, val: number) => void;
+  /** Third-party FX section in the drawer's FX tab — pass the panel's host
+   *  (self-contained; renders nothing on hosts without the surface).
+   *  @since SDK 2.39.0 */
+  externalFxHost?: PluginHost;
   /** Open/close FX (optional — omit to hide FX button) */
   onToggleFxDrawer?: () => void;
   /** Progress persistence callback */
@@ -184,6 +188,7 @@ export function TrackRow({
   onFxToggle,
   onFxPresetChange,
   onFxDryWetChange,
+  externalFxHost,
   onToggleFxDrawer,
   onProgressChange,
   accentColor = '#A78BFA',
@@ -517,6 +522,7 @@ export function TrackRow({
             onFxToggle={onFxToggle}
             onFxPresetChange={onFxPresetChange}
             onFxDryWetChange={onFxDryWetChange}
+            externalFxHost={externalFxHost}
             fxDisabled={isGenerating}
             instruments={availableInstruments}
             currentPluginId={currentInstrumentPluginId ?? null}

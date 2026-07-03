@@ -15,6 +15,7 @@ export type {
   PanelBusState,
   PanelBusFxEntry,
   PanelBusLevels,
+  TrackExternalFxEntry,
   GeneratorPlugin,
   PluginUIProps,
   PluginHost,
@@ -250,6 +251,8 @@ export {
 export { VolumeSlider } from './components/VolumeSlider';
 export { PanelMasterStrip, type PanelMasterStripProps } from './components/PanelMasterStrip';
 export { usePanelBus, type UsePanelBusResult } from './hooks/usePanelBus';
+export { TrackExternalFxSection, type TrackExternalFxSectionProps } from './components/TrackExternalFxSection';
+export { useTrackExternalFx, type UseTrackExternalFxResult } from './hooks/useTrackExternalFx';
 export { PanSlider } from './components/PanSlider';
 export { FxToggleBar, type FxToggleBarProps } from './components/FxToggleBar';
 export { SorceryProgressBar, calculateTimeBasedTarget } from './components/SorceryProgressBar';

@@ -19,10 +19,11 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import type { InstrumentDescriptor, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
+import type { InstrumentDescriptor, PluginHost, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
 import type { FxCategory, TrackFxDetailState } from '../types/fx-toggle.types';
 import { FxToggleBar } from './FxToggleBar';
 import { PianoRollEditor } from './PianoRollEditor';
+import { TrackExternalFxSection } from './TrackExternalFxSection';
 
 // ============================================================================
 // Tabs
@@ -57,6 +58,14 @@ export interface TrackDrawerProps {
   onFxDryWetChange?: (category: FxCategory, value: number) => void;
   /** Disable FX controls (e.g. while the track is generating). */
   fxDisabled?: boolean;
+  /**
+   * Third-party FX section under the toggle bar (@since SDK 2.39.0): pass the
+   * panel's host and the section manages its own state
+   * (TrackExternalFxSection). Renders nothing on hosts without the surface,
+   * so panels can pass this unconditionally. Omit to keep a built-ins-only
+   * FX tab.
+   */
+  externalFxHost?: PluginHost;
 
   // --- Pick tab (enabled when onSelect is provided) ---
   /** Available instrument plugins from engine scan. */
@@ -120,6 +129,7 @@ export function TrackDrawer({
   onFxPresetChange,
   onFxDryWetChange,
   fxDisabled = false,
+  externalFxHost,
   instruments = [],
   currentPluginId = null,
   isLoading = false,
@@ -277,6 +287,9 @@ export function TrackDrawer({
           }
           disabled={fxDisabled}
         />
+        {externalFxHost && (
+          <TrackExternalFxSection host={externalFxHost} trackId={trackId} disabled={fxDisabled} />
+        )}
       </div>
     );
   }

@@ -132,6 +132,27 @@ export interface PanelBusState {
   fx: PanelBusFxEntry[];
 }
 
+/**
+ * One third-party (VST3/AU) FX insert on a TRACK's plugin chain, as shown to
+ * the panel UI. The track's instrument, the built-in FX-toggle plugins
+ * (reverb/delay/eq/…) and the Volume & Pan master section are filtered OUT —
+ * this list is only the user's external inserts. Same shape as
+ * `PanelBusFxEntry` by design: the drawer and the bus strip share UI idioms.
+ * @since SDK 2.39.0
+ */
+export interface TrackExternalFxEntry {
+  /**
+   * ENGINE chain index — pass this back to remove/bypass/editor calls.
+   * Not contiguous from 0: the instrument and built-in FX share the chain.
+   */
+  index: number;
+  /** Scanned plugin id (the picker's `InstrumentDescriptor.pluginId`). */
+  pluginId: string;
+  /** Display name. */
+  name: string;
+  /** False when bypassed. */
+  enabled: boolean;
+}
 
 /**
  * Stereo peak levels of a panel bus's OUTPUT (post-FX, post-fader). dBFS,
@@ -783,6 +804,40 @@ export interface PluginHost {
    * scene, persisted state deleted. The panel returns to flat routing.
    */
   disengagePanelBus?(sceneId: string): Promise<void>;
+
+  // -------------------------------------------------------------------------
+  // Track external FX (third-party VST3/AU inserts on ONE track) — the track
+  // analogue of the panel-bus FX chain. The built-in FX toggles
+  // (getTrackFxState / toggleTrackFx / …) stay as they are; these methods
+  // manage additional scanned-plugin inserts, placed before the track's
+  // Volume & Pan. Ownership-scoped like every track method. States persist
+  // per track (raw VST3/AU blobs) and are re-applied on reopen / rebuilt
+  // after a `.sasproj` import. Everything optional — panels MUST feature-gate
+  // on `typeof host.getTrackExternalFx === 'function'`. @since SDK 2.39.0
+  // -------------------------------------------------------------------------
+
+  /**
+   * The track's external FX inserts (instrument + built-ins filtered out).
+   * Reading also converges persisted state: on the first read of a session
+   * the host re-applies saved raw plugin states, and after a `.sasproj`
+   * import it rebuilds missing inserts from the persisted blob.
+   */
+  getTrackExternalFx?(trackId: string): Promise<TrackExternalFxEntry[]>;
+
+  /**
+   * Add an FX plugin (by scanned pluginId, from `getAvailableFx`) to the
+   * track's chain, inserted before Volume & Pan. Instruments are rejected.
+   */
+  loadTrackExternalFx?(trackId: string, pluginId: string): Promise<TrackExternalFxEntry>;
+
+  /** Remove an external FX by its `TrackExternalFxEntry.index`. */
+  removeTrackExternalFx?(trackId: string, fxIndex: number): Promise<void>;
+
+  /** Bypass toggle for an external FX by its `TrackExternalFxEntry.index`. */
+  setTrackExternalFxEnabled?(trackId: string, fxIndex: number, enabled: boolean): Promise<void>;
+
+  /** Open the native editor window for an external FX. */
+  showTrackExternalFxEditor?(trackId: string, fxIndex: number): Promise<void>;
 
   // --- Transport & Playback Events ---
 

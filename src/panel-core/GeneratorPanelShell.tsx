@@ -152,6 +152,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
         onVolumeChange: (vol: number) => handlers.volumeChange(id, vol),
         onPanChange: (pan: number) => handlers.panChange(id, pan),
         onFxToggle: (cat: FxCategory, enabled: boolean) => handleFxToggle(id, cat, enabled),
+        externalFxHost: host,
         onFxPresetChange: (cat: FxCategory, idx: number) => handleFxPresetChange(id, cat, idx),
         onFxDryWetChange: (cat: FxCategory, val: number) => handleFxDryWetChange(id, cat, val),
         onToggleFxDrawer: () => handlers.toggleFxDrawer(id),
