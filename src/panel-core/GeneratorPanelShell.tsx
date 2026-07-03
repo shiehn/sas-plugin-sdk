@@ -22,6 +22,8 @@ import { FadeTrackRow } from '../components/FadeTrackRow';
 import { ImportTrackModal } from '../components/ImportTrackModal';
 import { TransitionDesigner } from '../components/TransitionDesigner';
 import { SorceryProgressBar } from '../components/SorceryProgressBar';
+import { PanelMasterStrip } from '../components/PanelMasterStrip';
+import { usePanelBus } from '../hooks/usePanelBus';
 import type { CrossfadeSlot } from '../crossfade-meta';
 import type { TrackRowDragProps } from '../hooks/useTrackReorder';
 import type { GeneratorTrackState } from './track-state';
@@ -85,6 +87,10 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
     deleteGroup,
   } = core;
   const { host, activeSceneId, isAuthenticated, sceneContext, onSelectScene, onOpenContract } = ui;
+  // Panel mix bus (docs/panel-bus.md §11): shared strip for every core-based
+  // panel. Feature-gated — renders nothing on hosts without the bus surface,
+  // which also keeps the Phase-0 pin harness (mock host) byte-identical.
+  const panelBus = usePanelBus(host, activeSceneId);
   const { identity, features } = adapter;
 
   // --- The ONE default TrackRow props builder ------------------------------
@@ -346,6 +352,24 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
           <div className="text-sas-muted text-xs text-center py-4">Loading tracks...</div>
         ) : (
           <>
+            {panelBus.supported && panelBus.bus && (
+              <PanelMasterStrip
+                bus={panelBus.bus}
+                availableFx={panelBus.availableFx}
+                fxLoading={panelBus.fxLoading}
+                soloedOut={anySolo && !panelBus.bus.soloed}
+                fxPickerOpen={panelBus.fxPickerOpen}
+                onToggleFxPicker={panelBus.setFxPickerOpen}
+                onRefreshFx={panelBus.refreshFx}
+                onVolumeChange={panelBus.onVolumeChange}
+                onMuteToggle={panelBus.onMuteToggle}
+                onSoloToggle={panelBus.onSoloToggle}
+                onAddFx={panelBus.onAddFx}
+                onRemoveFx={panelBus.onRemoveFx}
+                onToggleFxEnabled={panelBus.onToggleFxEnabled}
+                onShowFxEditor={panelBus.onShowFxEditor}
+              />
+            )}
             {slots?.beforeRows}
             {resolvedCrossfadePairs.map((pair) => (
               <CrossfadeTrackRow

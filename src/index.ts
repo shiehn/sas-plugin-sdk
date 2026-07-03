@@ -248,6 +248,7 @@ export {
 } from './components/PianoRollEditor';
 export { VolumeSlider } from './components/VolumeSlider';
 export { PanelMasterStrip, type PanelMasterStripProps } from './components/PanelMasterStrip';
+export { usePanelBus, type UsePanelBusResult } from './hooks/usePanelBus';
 export { PanSlider } from './components/PanSlider';
 export { FxToggleBar, type FxToggleBarProps } from './components/FxToggleBar';
 export { SorceryProgressBar, calculateTimeBasedTarget } from './components/SorceryProgressBar';
