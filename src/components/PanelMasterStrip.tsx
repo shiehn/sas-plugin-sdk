@@ -13,13 +13,19 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import type { InstrumentDescriptor, PanelBusFxEntry, PanelBusState } from '../types/plugin-sdk.types';
+import type { InstrumentDescriptor, PanelBusFxEntry, PanelBusLevels, PanelBusState } from '../types/plugin-sdk.types';
+import { LevelMeter } from './LevelMeter';
 import { VolumeSlider } from './VolumeSlider';
 import { dbToSlider, sliderToDb } from '../utils/volume-conversion';
 
 export interface PanelMasterStripProps {
   /** Bus state from `host.getPanelBusState(sceneId)`. */
   bus: PanelBusState;
+  /**
+   * Stereo output levels from `host.getPanelBusLevels` (polled by
+   * usePanelBus). Null floors the meter (disengaged / engine quiet).
+   */
+  levels?: PanelBusLevels | null;
   /** FX descriptors from `host.getAvailableFx()` (lazy-load on picker open). */
   availableFx?: InstrumentDescriptor[];
   /** True while `availableFx` is loading. */
@@ -50,6 +56,7 @@ export interface PanelMasterStripProps {
 
 export function PanelMasterStrip({
   bus,
+  levels = null,
   availableFx = [],
   fxLoading = false,
   soloedOut = false,
@@ -79,7 +86,7 @@ export function PanelMasterStrip({
   return (
     <div
       data-testid="panel-master-strip"
-      className={`flex flex-col gap-1 px-2 py-1.5 rounded-sm border border-sas-border bg-sas-panel-alt/50 transition-opacity ${
+      className={`flex flex-col gap-1 px-2 py-1.5 rounded-sm border border-sas-border border-l-2 border-l-sas-accent/50 bg-sas-accent/5 transition-opacity ${
         soloedOut ? 'opacity-40' : ''
       }`}
     >
@@ -92,12 +99,29 @@ export function PanelMasterStrip({
           BUS
         </span>
 
-        <div className="w-24">
+        <div className="flex-1 min-w-[8rem] flex flex-col gap-0.5">
           <VolumeSlider
             value={dbToSlider(bus.volume)}
             onChange={(sliderValue: number) => onVolumeChange(sliderToDb(sliderValue))}
             disabled={disabled}
           />
+          {/* Stereo OUTPUT meter: the bus folder's post-fader Level Meter —
+              the summed contribution of everything routed through the bus. */}
+          <div className="flex flex-col gap-px" data-testid="bus-meter">
+            <LevelMeter
+              peakDb={levels?.leftDb ?? -120}
+              active={levels != null}
+              clipped={levels?.clipped}
+              compact
+              data-testid="bus-meter-left"
+            />
+            <LevelMeter
+              peakDb={levels?.rightDb ?? -120}
+              active={levels != null}
+              compact
+              data-testid="bus-meter-right"
+            />
+          </div>
         </div>
 
         <button
@@ -124,7 +148,7 @@ export function PanelMasterStrip({
         </button>
 
         {/* FX chips */}
-        <div className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto">
+        <div className="flex items-center gap-1 max-w-[45%] min-w-0 overflow-x-auto">
           {bus.fx.map((fx: PanelBusFxEntry) => (
             <span
               key={`${fx.index}:${fx.pluginId}`}
@@ -180,9 +204,9 @@ export function PanelMasterStrip({
               ? 'border-sas-accent text-sas-accent bg-sas-accent/10'
               : 'border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent'
           } disabled:opacity-50`}
-          title="Add an FX plugin to the panel bus"
+          title={fxPickerOpen ? 'Close the FX picker' : 'Add an FX plugin to the panel bus'}
         >
-          FX +
+          {fxPickerOpen ? 'FX \u25B4' : 'FX +'}
         </button>
       </div>
 

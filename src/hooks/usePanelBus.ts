@@ -16,15 +16,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   InstrumentDescriptor,
+  PanelBusLevels,
   PanelBusState,
   PluginHost,
 } from '../types/plugin-sdk.types';
+
+/** Bus meter poll cadence. Half the per-track meters' 33 ms — one extra IPC
+ *  round-trip per engaged panel is cheap, and 15 Hz reads fine on a bus bar. */
+const LEVELS_POLL_MS = 66;
 
 export interface UsePanelBusResult {
   /** False on pre-2.36 hosts — render no strip. */
   supported: boolean;
   /** Null until the first load completes for the current scene. */
   bus: PanelBusState | null;
+  /** Stereo output levels (null = disengaged / floored). Polled at ~15 Hz. */
+  levels: PanelBusLevels | null;
   availableFx: InstrumentDescriptor[];
   fxLoading: boolean;
   fxPickerOpen: boolean;
@@ -43,6 +50,7 @@ export interface UsePanelBusResult {
 export function usePanelBus(host: PluginHost, activeSceneId: string | null): UsePanelBusResult {
   const supported = typeof host.getPanelBusState === 'function';
   const [bus, setBus] = useState<PanelBusState | null>(null);
+  const [levels, setLevels] = useState<PanelBusLevels | null>(null);
   const [availableFx, setAvailableFx] = useState<InstrumentDescriptor[]>([]);
   const [fxLoading, setFxLoading] = useState(false);
   const [fxPickerOpen, setFxPickerOpen] = useState(false);
@@ -71,6 +79,31 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
     setFxPickerOpen(false);
     void reload();
   }, [reload]);
+
+  // Meter poll: only while the bus is engaged (and the tab visible). Errors
+  // and unrealized states floor the meter rather than surfacing.
+  useEffect(() => {
+    if (!supported || !activeSceneId || !bus?.engaged || !host.getPanelBusLevels) {
+      setLevels(null);
+      return;
+    }
+    let cancelled = false;
+    const tick = async (): Promise<void> => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      try {
+        const next = await host.getPanelBusLevels!(activeSceneId);
+        if (!cancelled) setLevels(next);
+      } catch {
+        if (!cancelled) setLevels(null);
+      }
+    };
+    void tick();
+    const id = setInterval(() => void tick(), LEVELS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [supported, activeSceneId, bus?.engaged, host]);
 
   const loadFxList = useCallback(
     async (force: boolean): Promise<void> => {
@@ -119,6 +152,7 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
   return {
     supported,
     bus,
+    levels,
     availableFx,
     fxLoading,
     fxPickerOpen,

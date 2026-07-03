@@ -132,6 +132,19 @@ export interface PanelBusState {
   fx: PanelBusFxEntry[];
 }
 
+
+/**
+ * Stereo peak levels of a panel bus's OUTPUT (post-FX, post-fader). dBFS,
+ * floored at -120 ("no signal"). Drives the strip's stereo meter.
+ * @since SDK 2.38.0
+ */
+export interface PanelBusLevels {
+  leftDb: number;
+  rightDb: number;
+  /** Latched overload since the last read. */
+  clipped: boolean;
+}
+
 /** Every generator plugin must implement this interface. */
 export interface GeneratorPlugin {
   /** Unique ID, npm-style scope: '@sas/synth-generator', '@user/my-plugin' */
@@ -733,6 +746,13 @@ export interface PluginHost {
    * is the panel's whole reload story.
    */
   getPanelBusState?(sceneId: string): Promise<PanelBusState>;
+
+  /**
+   * Stereo output levels for the strip's bus meter (~30 Hz poll). Null when
+   * the bus is disengaged/unrealized or the engine is unavailable — render
+   * the meter floored. Never engages a bus. @since SDK 2.38.0
+   */
+  getPanelBusLevels?(sceneId: string): Promise<PanelBusLevels | null>;
 
   /** Master fader in dB (engages the bus on first use). */
   setPanelBusVolume?(sceneId: string, volumeDb: number): Promise<void>;

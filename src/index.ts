@@ -14,6 +14,7 @@ export type {
   InstrumentDescriptor,
   PanelBusState,
   PanelBusFxEntry,
+  PanelBusLevels,
   GeneratorPlugin,
   PluginUIProps,
   PluginHost,

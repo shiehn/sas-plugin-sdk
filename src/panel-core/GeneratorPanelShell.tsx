@@ -355,6 +355,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
             {panelBus.supported && panelBus.bus && (
               <PanelMasterStrip
                 bus={panelBus.bus}
+                levels={panelBus.levels}
                 availableFx={panelBus.availableFx}
                 fxLoading={panelBus.fxLoading}
                 soloedOut={anySolo && !panelBus.bus.soloed}
