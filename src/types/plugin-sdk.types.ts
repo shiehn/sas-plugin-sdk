@@ -759,6 +759,17 @@ export interface PluginHost {
   getAvailableFx?(): Promise<InstrumentDescriptor[]>;
 
   /**
+   * Force a plugin re-scan and return the refreshed FX list. Unlike
+   * `getAvailableFx` (served from a cache), this re-walks the plugin
+   * directories AND clears the engine's failed-probe blacklist, so a plugin
+   * installed mid-session, or one that crashed a previous scan and was
+   * blacklisted, reappears without an app restart. Backs the FX picker's
+   * "Rescan" button. Slow (20-60s). Absent on pre-2.40 hosts — callers should
+   * fall back to `getAvailableFx`. @since SDK 2.40.0
+   */
+  rescanAvailableFx?(): Promise<InstrumentDescriptor[]>;
+
+  /**
    * The panel's bus state for a scene. `{ engaged: false, … }` when the
    * panel has no bus there — reading NEVER creates one. When engaged, this
    * also (re)realizes the bus in the engine (adopt-by-marker; rebuild from

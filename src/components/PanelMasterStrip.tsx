@@ -226,7 +226,7 @@ export function PanelMasterStrip({
                 onClick={() => onRefreshFx()}
                 disabled={fxLoading}
                 className="px-2 py-1 text-xs rounded-sm border border-sas-border text-sas-muted hover:text-sas-accent hover:border-sas-accent transition-colors disabled:opacity-50"
-                title="Re-scan plugins"
+                title="Re-scan plugins — picks up newly installed FX and retries any that failed a previous scan"
               >
                 {fxLoading ? '...' : 'Refresh'}
               </button>

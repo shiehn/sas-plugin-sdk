@@ -71,12 +71,20 @@ export function useTrackExternalFx(host: PluginHost, trackId: string): UseTrackE
   }, [reload]);
 
   const loadFxList = useCallback(
-    async (force: boolean): Promise<void> => {
+    async (opts: { force?: boolean; rescan?: boolean }): Promise<void> => {
       if (!supported || !host.getAvailableFx) return;
-      if (fxLoadedRef.current && !force) return;
+      if (fxLoadedRef.current && !opts.force && !opts.rescan) return;
       setFxLoading(true);
       try {
-        const list = await host.getAvailableFx();
+        // A user-initiated rescan re-walks the plugin directories AND clears
+        // the engine's failed-probe blacklist (host.rescanAvailableFx), so a
+        // plugin installed mid-session or blacklisted by an earlier crash
+        // reappears with no restart. The lazy first-open path just reads the
+        // cache. Fall back to getAvailableFx on pre-2.40 hosts.
+        const list =
+          opts.rescan && host.rescanAvailableFx
+            ? await host.rescanAvailableFx()
+            : await host.getAvailableFx();
         setAvailableFx(list);
         fxLoadedRef.current = true;
       } catch {
@@ -91,7 +99,7 @@ export function useTrackExternalFx(host: PluginHost, trackId: string): UseTrackE
   const openPicker = useCallback(
     (open: boolean): void => {
       setPickerOpen(open);
-      if (open) void loadFxList(false); // lazy-load on first open
+      if (open) void loadFxList({}); // lazy-load on first open (cache read)
     },
     [loadFxList]
   );
@@ -118,7 +126,7 @@ export function useTrackExternalFx(host: PluginHost, trackId: string): UseTrackE
     fxLoading,
     pickerOpen,
     setPickerOpen: openPicker,
-    refreshFx: () => void loadFxList(true),
+    refreshFx: () => void loadFxList({ rescan: true }),
     reload,
     onAddFx: (pluginId: string) =>
       mutate(host.loadTrackExternalFx && (async () => {
