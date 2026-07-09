@@ -52,6 +52,18 @@ export interface FadeMeta {
   soundLabel: string;
   /** Fade position 0..1 — WHERE in time the fade midpoint sits. */
   sliderPos: number;
+  /**
+   * GROUP fades (verbatim multi-track fades, e.g. a bass voice group): shared
+   * id linking every member track of one fade — by convention the first
+   * member copy's dbId. Absent on classic single-track fades; old metas parse
+   * unchanged. All members of a group share direction/gesture/sliderPos.
+   * @since SDK 2.41.0
+   */
+  groupId?: string;
+  /** Stable member order within the group (e.g. bass voiceIndex). @since SDK 2.41.0 */
+  memberIndex?: number;
+  /** Per-member caption, e.g. the bass voice partition label. @since SDK 2.41.0 */
+  memberLabel?: string;
 }
 
 /** A fade entry resolved from scene data: the fade track's dbId + its metadata. */
@@ -79,6 +91,9 @@ export function asFadeMeta(val: unknown): FadeMeta | null {
     sourceName: typeof m.sourceName === 'string' ? m.sourceName : '',
     soundLabel: typeof m.soundLabel === 'string' ? m.soundLabel : '',
     sliderPos: typeof m.sliderPos === 'number' ? m.sliderPos : 0.5,
+    groupId: typeof m.groupId === 'string' && m.groupId ? m.groupId : undefined,
+    memberIndex: typeof m.memberIndex === 'number' ? m.memberIndex : undefined,
+    memberLabel: typeof m.memberLabel === 'string' && m.memberLabel ? m.memberLabel : undefined,
   };
 }
 
@@ -97,6 +112,63 @@ export function parseFades(sceneData: Record<string, unknown>): FadeEntry[] {
     out.push({ dbId: match[1], meta });
   }
   return out;
+}
+
+/**
+ * One GROUP fade assembled from its member entries: N tracks fading together
+ * as a unit (verbatim group fades — e.g. a copied bass voice group). Scalars
+ * (direction/gesture/sliderPos) come from the first member; creation writes
+ * them identically across members. Generic over the entry type so callers can
+ * split live-resolved entries without losing their extra fields.
+ * @since SDK 2.41.0
+ */
+export interface GroupFadeEntryOf<E extends FadeEntry> {
+  groupId: string;
+  direction: FadeDirection;
+  gesture: FadeGesture;
+  sliderPos: number;
+  /** Members sorted by memberIndex (creation order fallback). */
+  members: E[];
+}
+
+/** The plain-entry specialization (scene-data parse results). @since SDK 2.41.0 */
+export type GroupFadeEntry = GroupFadeEntryOf<FadeEntry>;
+
+/**
+ * Partition parsed fade entries into classic single-track fades and group
+ * fades (entries sharing a `groupId`). Pure; keyed for the panel-core render
+ * split — drift-resync and curve re-apply deliberately keep iterating the
+ * FLAT entry list so they need no group awareness. @since SDK 2.41.0
+ */
+export function splitFadeEntries<E extends FadeEntry>(entries: E[]): {
+  singles: E[];
+  groups: GroupFadeEntryOf<E>[];
+} {
+  const singles: E[] = [];
+  const byGroup = new Map<string, E[]>();
+  for (const entry of entries) {
+    const gid = entry.meta.groupId;
+    if (!gid) {
+      singles.push(entry);
+      continue;
+    }
+    const list = byGroup.get(gid) ?? [];
+    list.push(entry);
+    byGroup.set(gid, list);
+  }
+  const groups: GroupFadeEntryOf<E>[] = [];
+  for (const [groupId, members] of byGroup) {
+    members.sort((a, b) => (a.meta.memberIndex ?? 0) - (b.meta.memberIndex ?? 0));
+    const head = members[0].meta;
+    groups.push({
+      groupId,
+      direction: head.direction,
+      gesture: head.gesture,
+      sliderPos: head.sliderPos,
+      members,
+    });
+  }
+  return { singles, groups };
 }
 
 /**

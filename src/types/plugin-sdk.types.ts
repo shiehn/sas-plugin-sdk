@@ -155,6 +155,21 @@ export interface TrackExternalFxEntry {
 }
 
 /**
+ * Outcome of copying a source track's FX chain onto another track
+ * (`copyTrackFxFrom`). Partial success is normal — a third-party plugin
+ * missing from this machine lands in `externalMissing` while everything else
+ * still copies. @since SDK 2.41.0
+ */
+export interface TrackFxCopyResult {
+  /** Built-in FX categories (reverb/delay/eq/…) re-applied on the dest. */
+  builtIn: string[];
+  /** External inserts successfully rebuilt on the dest. */
+  externalCopied: number;
+  /** External plugin names that failed to load (missing from this machine). */
+  externalMissing: string[];
+}
+
+/**
  * Stereo peak levels of a panel bus's OUTPUT (post-FX, post-fader). dBFS,
  * floored at -120 ("no signal"). Drives the strip's stereo meter.
  * @since SDK 2.38.0
@@ -849,6 +864,18 @@ export interface PluginHost {
 
   /** Open the native editor window for an external FX. */
   showTrackExternalFxEditor?(trackId: string, fxIndex: number): Promise<void>;
+
+  /**
+   * Copy a SOURCE track's whole FX chain (built-in fx-toggle categories AND
+   * external inserts with their states) onto an owned track. The source is
+   * addressed by DB row id and may live in ANOTHER scene (transition
+   * crossfade/fade layers copy from the from/to scenes) — only the DEST is
+   * ownership-asserted, mirroring `getTrackSound`. Partial success is normal:
+   * missing third-party plugins land in `externalMissing` and everything else
+   * still copies. Feature-gate on `typeof host.copyTrackFxFrom === 'function'`.
+   * @since SDK 2.41.0
+   */
+  copyTrackFxFrom?(destTrackId: string, sourceTrackDbId: string): Promise<TrackFxCopyResult>;
 
   // --- Transport & Playback Events ---
 

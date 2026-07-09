@@ -181,13 +181,21 @@ export {
   asFadeMeta,
   buildFadeVolumeCurve,
   defaultFadeGesture,
+  splitFadeEntries,
   TEXTURAL_ROLES,
   type FadeDirection,
   type FadeGesture,
   type FadeMeta,
   type FadeEntry,
+  type GroupFadeEntry,
+  type GroupFadeEntryOf,
 } from './fade-meta';
 export { FadeTrackRow, type FadeTrackRowProps, type FadeLayer } from './components/FadeTrackRow';
+export {
+  GroupFadeTrackRow,
+  type GroupFadeTrackRowProps,
+  type GroupFadeMemberLayer,
+} from './components/GroupFadeTrackRow';
 export { FadeModal, type FadeModalProps, type FadeSelection } from './components/FadeModal';
 export { ImportTrackModal, type ImportTrackModalProps } from './components/ImportTrackModal';
 export {

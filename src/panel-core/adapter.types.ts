@@ -25,6 +25,7 @@ import type {
   PluginMidiNote,
   CreateTrackOptions,
   TrackSoundSnapshot,
+  SceneFamilyTrack,
 } from '../types/plugin-sdk.types';
 import type { UseSoundHistoryResult } from '../hooks/useSoundHistory';
 import type { TrackRowDragProps } from '../hooks/useTrackReorder';
@@ -266,6 +267,79 @@ export interface PanelGroupExtension<M = unknown> extends GroupParseSpec<M> {
 }
 
 // ============================================================================
+// Transition group adapter (verbatim group fades)
+// ============================================================================
+
+/**
+ * One member of a verbatim group fade — a SOURCE track (from/to scene) whose
+ * MIDI + sound + FX are copied byte-exact into the transition scene.
+ * @since SDK 2.41.0
+ */
+export interface VerbatimFadeMember {
+  /** Source track DB row id. */
+  dbId: string;
+  /** Source track display name (per-member fade caption). */
+  name: string;
+  role?: string;
+  /** Stable order within the group (bass: voiceIndex; anchor = 0). */
+  memberIndex: number;
+  /** Short per-member label, e.g. the bass partition ('low', 'offbeats'). */
+  memberLabel?: string;
+  /** Opaque family meta round-tripped into `writeGroupMetas` (bass: BassVoiceMeta). */
+  familyMeta?: unknown;
+}
+
+/**
+ * Group-shaped transition behavior for families whose "track" is a VOICE
+ * GROUP of N tracks (bass basslines). Registering this switches the panel's
+ * Transition Designer to FADE-ONLY (`fadeOnly: true` is the only supported
+ * mode — a 1:1 MIDI crossfade is undefined between groups of different voice
+ * counts) with one board cell per GROUP, and `onCreateFade` routes to the
+ * core's `handleCreateVerbatimGroupFade`: every member is copied VERBATIM
+ * (MIDI clamped to the transition span + exact sound + FX chain — NO LLM) and
+ * the whole group fades together under one slider. @since SDK 2.41.0
+ */
+export interface PanelTransitionGroupAdapter {
+  /** v1: group families are fade-only; crossfade rows never render. */
+  fadeOnly: true;
+  /**
+   * Collapse a scene's family tracks into designer SUBJECTS: one entry per
+   * group (carrying the ANCHOR's dbId so exclude/row keys work unchanged)
+   * plus loose tracks passed through. Called per column after
+   * `listSceneFamilyTracks`.
+   */
+  mapColumnSubjects(sceneId: string, tracks: SceneFamilyTrack[]): Promise<SceneFamilyTrack[]>;
+  /**
+   * Expand a subject (anchor dbId) back into its ordered members. A loose
+   * track returns a single member with memberIndex 0.
+   */
+  expandSubject(sceneId: string, subjectDbId: string): Promise<VerbatimFadeMember[]>;
+  /**
+   * Persist the family's own group metas for the COPIED tracks in the
+   * transition scene (bass: `track:<newDbId>:bassVoice` rows sharing
+   * groupId = newAnchorDbId) so the Tracks view renders them as a proper
+   * family group.
+   */
+  writeGroupMetas(
+    transitionSceneId: string,
+    copies: Array<{ newDbId: string; member: VerbatimFadeMember }>,
+    newAnchorDbId: string,
+  ): Promise<void>;
+  /** Scene-data key suffixes to delete per member on rollback/delete (bass: ['bassVoice']). */
+  cleanupKeySuffixes: string[];
+  /**
+   * Default fade midpoint per direction. Bass staggers them (out→0.35,
+   * in→0.65) so the outgoing and incoming groups avoid low-end overlap.
+   * Default 0.5.
+   */
+  defaultSliderPos?(direction: 'in' | 'out'): number;
+  /** Progress-bar pacing for one group fade (LLM-free; default the designer's fade estimate). */
+  fadeEstimateMs?: number;
+  /** Group-fade row header label, e.g. `Bassline (3 voices)`. Default `Group (N tracks)`. */
+  groupRowLabel?(memberCount: number): string;
+}
+
+// ============================================================================
 // The adapter
 // ============================================================================
 
@@ -288,6 +362,12 @@ export interface GeneratorPanelAdapter<M = unknown> {
   generation: PanelGenerationStrategy;
   /** Custom multi-track group rows (bass voice groups). */
   groupExtensions?: PanelGroupExtension<M>[];
+  /**
+   * Group-shaped transition behavior (fade-only designer + verbatim group
+   * fades). Registering this is what lights up `features.transitionDesigner`
+   * for group families. @since SDK 2.41.0
+   */
+  transitionGroup?: PanelTransitionGroupAdapter;
   /** Patch the default TrackRow props per row (drum's sampleName fallback). */
   mapTrackRowProps?(track: GeneratorTrackState, props: SDKTrackRowProps): SDKTrackRowProps;
 }

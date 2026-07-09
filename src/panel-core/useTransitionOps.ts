@@ -36,11 +36,12 @@ import {
   type FadeGesture,
   type FadeMeta,
   type FadeEntry,
+  type GroupFadeEntryOf,
 } from '../fade-meta';
 import type { CrossfadeSelection } from '../components/CrossfadeModal';
 import type { FadeSelection } from '../components/FadeModal';
 import type { GeneratorTrackState } from './track-state';
-import type { GeneratorPanelAdapter } from './adapter.types';
+import type { GeneratorPanelAdapter, VerbatimFadeMember } from './adapter.types';
 
 /** A crossfade pair resolved against live track state (both members present). */
 export interface ResolvedCrossfadePair extends CrossfadePairMeta {
@@ -52,6 +53,9 @@ export interface ResolvedCrossfadePair extends CrossfadePairMeta {
 export interface ResolvedFade extends FadeEntry {
   track: GeneratorTrackState;
 }
+
+/** A GROUP fade (verbatim multi-track fade) resolved against live track state. @since SDK 2.41.0 */
+export type ResolvedGroupFade = GroupFadeEntryOf<ResolvedFade>;
 
 export interface UseTransitionOpsInputs {
   host: PluginHost;
@@ -84,6 +88,16 @@ export interface TransitionOps {
   handleCrossfadeSlider(pair: ResolvedCrossfadePair, pos: number): void;
   handleFadeDelete(fade: ResolvedFade): Promise<void>;
   handleFadeSlider(fade: ResolvedFade, pos: number): void;
+  /** True while any verbatim group fade is being created. @since SDK 2.41.0 */
+  isCreatingGroupFade: boolean;
+  /**
+   * Verbatim GROUP fade (adapter.transitionGroup families): copy every member
+   * of the subject's voice group byte-exact (MIDI + sound + FX — NO LLM) into
+   * the transition scene and fade them together. @since SDK 2.41.0
+   */
+  handleCreateVerbatimGroupFade(subject: FadeSelection, direction: FadeDirection): Promise<void>;
+  handleGroupFadeSlider(group: ResolvedGroupFade, pos: number): void;
+  handleGroupFadeDelete(group: ResolvedGroupFade): Promise<void>;
 }
 
 export function useTransitionOps({
@@ -144,6 +158,32 @@ export function useTransitionOps({
       if (!host.setTrackVolumeAutomation) return;
       const points = buildFadeVolumeCurve(bars, bpm, direction, sliderPos, gesture);
       await host.setTrackVolumeAutomation(trackId, points).catch(() => {});
+    },
+    [host],
+  );
+
+  // --- FX copy (best-effort) ---------------------------------------------
+  // Layer tracks are created fresh, so the instrument copy alone lands
+  // bone-dry — copy the source's FULL FX chain (built-in categories +
+  // external inserts) too. Best-effort by design: a third-party plugin
+  // missing from this machine must not fail the create (it surfaces as a
+  // warning toast instead). Feature-gated for pre-2.41 hosts. Deliberately
+  // NOT part of the drift re-sync — that re-pushes sound identity only.
+  const copyTrackFx = useCallback(
+    async (newTrackId: string, sourceDbId: string): Promise<void> => {
+      if (typeof host.copyTrackFxFrom !== 'function') return;
+      try {
+        const res = await host.copyTrackFxFrom(newTrackId, sourceDbId);
+        if (res.externalMissing.length > 0) {
+          host.showToast(
+            'warning',
+            'Some FX not copied',
+            `Missing plugin(s): ${res.externalMissing.join(', ')}`,
+          );
+        }
+      } catch {
+        /* best-effort — the layer still works, just drier */
+      }
     },
     [host],
   );
@@ -250,6 +290,10 @@ export function useTransitionOps({
         const originLabel = await copySound(top.id, origin.dbId);
         const targetLabel = await copySound(bottom.id, target.dbId);
 
+        // 4b. Copy each source's FX chain onto its layer (best-effort).
+        await copyTrackFx(top.id, origin.dbId);
+        await copyTrackFx(bottom.id, target.dbId);
+
         // 5. Crossfade volume automation (centered slider). Leave unmuted —
         // the point is to hear it.
         await applyCrossfadeAutomation(top.id, bottom.id, mc.bars, mc.bpm, 0.5);
@@ -312,6 +356,7 @@ export function useTransitionOps({
   // --- Create a fade (transition orphan) --------------------------------
   // A fade is a crossfade with one empty endpoint: ONE generated track that
   // either fades in (target-only) or out (origin-only) across the transition.
+  const [isCreatingGroupFade, setIsCreatingGroupFade] = useState(false);
   const [isCreatingFade, setIsCreatingFade] = useState(false);
   const handleCreateFade = useCallback(
     async (
@@ -396,6 +441,9 @@ export function useTransitionOps({
             soundLabel = await adapter.sound.copySnapshot(track.id, snap);
           }
         }
+
+        // 4b. Copy the source's FX chain onto the layer (best-effort).
+        await copyTrackFx(track.id, selection.dbId);
 
         // 5. One-sided volume curve (centered slider). Mark applied so the load
         // effect doesn't redundantly re-apply.
@@ -612,6 +660,229 @@ export function useTransitionOps({
     [host, activeSceneId, applyFadeAutomation, setFadesMeta],
   );
 
+  // --- Verbatim GROUP fade (adapter.transitionGroup families) ------------
+  // NO LLM: every member of the source voice group is copied byte-exact
+  // (MIDI clamped to the transition span + exact sound + FX chain) and the
+  // whole group rides ONE fade curve. Gesture is hard-pinned 'volume' —
+  // verbatim MIDI carries no compositional build, so a 'build' gesture would
+  // not fade at all. No isAuthenticated gate (nothing to generate).
+  const handleCreateVerbatimGroupFade = useCallback(
+    async (subject: FadeSelection, direction: FadeDirection): Promise<void> => {
+      const groupAdapter = adapter.transitionGroup;
+      if (!groupAdapter) throw new Error('This panel does not support group fades.');
+      const scene = activeSceneId;
+      const fromSceneId = sceneContext?.transitionFromSceneId ?? '';
+      const toSceneId = sceneContext?.transitionToSceneId ?? '';
+      if (!scene) throw new Error('No active scene.');
+      if (!isConnected) throw new Error('Systems not connected.');
+
+      // The source group lives in the FROM scene for a fade-out, TO for a fade-in.
+      const sourceSceneId = direction === 'out' ? fromSceneId : toSceneId;
+      const members = await groupAdapter.expandSubject(sourceSceneId, subject.dbId);
+      if (members.length === 0) {
+        throw new Error('Nothing to fade — the source group has no members.');
+      }
+      if (tracks.length + members.length > identity.maxTracks) {
+        throw new Error(`Not enough track slots for this fade (needs ${members.length}).`);
+      }
+
+      setIsCreatingGroupFade(true);
+      const created: Array<{
+        handle: PluginTrackHandle;
+        member: VerbatimFadeMember;
+        soundLabel: string;
+      }> = [];
+      try {
+        const mc = await host.getMusicalContext();
+        const sliderPos = groupAdapter.defaultSliderPos?.(direction) ?? 0.5;
+        const gesture: FadeGesture = 'volume';
+        const clipEnd = (mc.bars * 4 * 60) / mc.bpm;
+        const maxBeats = mc.bars * 4;
+
+        for (const member of members) {
+          // 1. Fresh family track per member.
+          const handle = await host.createTrack({
+            name: `${identity.trackNamePrefix}-${Date.now()}-fade-${direction}-v${member.memberIndex}`,
+            ...adapter.createTrackOptions(),
+          });
+          created.push({ handle, member, soundLabel: 'default' });
+          const role = member.role ?? subject.role ?? '';
+          if (role) await host.setTrackRole(handle.id, role).catch(() => {});
+
+          // 2. VERBATIM MIDI, value-copied and clamped to the transition span
+          // (a shorter source plays once then silence — masked by the fade).
+          const srcMidi = host.readImportableTrackMidi
+            ? await host.readImportableTrackMidi(member.dbId)
+            : { clips: [] };
+          const srcNotes = srcMidi.clips[0]?.notes ?? [];
+          const notes = srcNotes
+            .filter((n) => n.startBeat < maxBeats)
+            .map((n) => ({
+              ...n,
+              durationBeats: Math.min(n.durationBeats, maxBeats - n.startBeat),
+            }));
+          if (notes.length > 0) {
+            const clip: MidiClipData = { startTime: 0, endTime: clipEnd, tempo: mc.bpm, notes };
+            await host.writeMidiClip(handle.id, clip);
+          }
+
+          // 3. EXACT sound (persisted as durable identity for the drift re-sync).
+          if (host.getTrackSound) {
+            const snap = await host.getTrackSound(member.dbId);
+            if (snap && snap.kind === adapter.sound.acceptedSnapshotKind) {
+              created[created.length - 1].soundLabel = await adapter.sound.copySnapshot(
+                handle.id,
+                snap,
+              );
+            }
+          }
+
+          // 4. FX chain (best-effort, Feature-A copy).
+          await copyTrackFx(handle.id, member.dbId);
+
+          // 5. Shared one-sided curve; mark applied so the load effect skips it.
+          await applyFadeAutomation(handle.id, direction, mc.bars, mc.bpm, sliderPos, gesture);
+          appliedFadeAutomationRef.current.add(handle.id);
+        }
+
+        // 6. Persist metas: one FadeMeta per member sharing groupId (= first
+        // copy's dbId), plus the family's own group metas so the Tracks view
+        // renders the copies as a proper voice group.
+        const groupId = created[0].handle.dbId;
+        for (const { handle, member, soundLabel } of created) {
+          const meta: FadeMeta = {
+            direction,
+            gesture,
+            sourceTrackDbId: member.dbId,
+            sourceSceneId,
+            sourceName: member.name,
+            soundLabel,
+            sliderPos,
+            groupId,
+            memberIndex: member.memberIndex,
+            memberLabel: member.memberLabel,
+          };
+          await host.setSceneData(scene, `track:${handle.dbId}:fade`, meta);
+        }
+        await groupAdapter.writeGroupMetas(
+          scene,
+          created.map(({ handle, member }) => ({ newDbId: handle.dbId, member })),
+          groupId,
+        );
+
+        await loadTracks(true);
+        host.showToast(
+          'success',
+          direction === 'in' ? 'Fade in created' : 'Fade out created',
+          subject.name,
+        );
+      } catch (err: unknown) {
+        // LIFO rollback — tracks + any metas already written.
+        for (const { handle } of [...created].reverse()) {
+          try {
+            await host.deleteTrack(handle.id);
+          } catch {
+            /* best effort */
+          }
+          await host.deleteSceneData(scene, `track:${handle.dbId}:fade`).catch(() => {});
+          for (const suffix of groupAdapter.cleanupKeySuffixes) {
+            await host.deleteSceneData(scene, `track:${handle.dbId}:${suffix}`).catch(() => {});
+          }
+        }
+        throw err instanceof Error ? err : new Error(String(err));
+      } finally {
+        setIsCreatingGroupFade(false);
+      }
+    },
+    [
+      host,
+      adapter,
+      identity,
+      activeSceneId,
+      isConnected,
+      tracks.length,
+      sceneContext,
+      applyFadeAutomation,
+      copyTrackFx,
+      loadTracks,
+    ],
+  );
+
+  // Drag the group fade slider: optimistic patch of ALL members, one debounce
+  // per group, then re-apply the shared curve per member + persist sliderPos.
+  const groupFadeSliderTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const handleGroupFadeSlider = useCallback(
+    (group: ResolvedGroupFade, pos: number): void => {
+      setFadesMeta((prev) =>
+        prev.map((f) =>
+          f.meta.groupId === group.groupId ? { ...f, meta: { ...f.meta, sliderPos: pos } } : f,
+        ),
+      );
+      if (groupFadeSliderTimers.current[group.groupId]) {
+        clearTimeout(groupFadeSliderTimers.current[group.groupId]);
+      }
+      groupFadeSliderTimers.current[group.groupId] = setTimeout(() => {
+        void (async () => {
+          const mc = await host.getMusicalContext();
+          const sceneData = activeSceneId
+            ? ((await host.getAllSceneData(activeSceneId)) as Record<string, unknown>)
+            : null;
+          for (const member of group.members) {
+            await applyFadeAutomation(
+              member.track.handle.id,
+              group.direction,
+              mc.bars,
+              mc.bpm,
+              pos,
+              group.gesture,
+            );
+            if (activeSceneId && sceneData) {
+              const meta = asFadeMeta(sceneData[`track:${member.dbId}:fade`]);
+              if (meta) {
+                host
+                  .setSceneData(activeSceneId, `track:${member.dbId}:fade`, {
+                    ...meta,
+                    sliderPos: pos,
+                  })
+                  .catch(() => {});
+              }
+            }
+          }
+        })();
+      }, 200);
+    },
+    [host, activeSceneId, applyFadeAutomation, setFadesMeta],
+  );
+
+  const handleGroupFadeDelete = useCallback(
+    async (group: ResolvedGroupFade): Promise<void> => {
+      const suffixes = ['fade', ...(adapter.transitionGroup?.cleanupKeySuffixes ?? [])];
+      try {
+        for (const member of group.members) {
+          await host.deleteTrack(member.track.handle.id);
+          if (activeSceneId) {
+            for (const suffix of suffixes) {
+              await host
+                .deleteSceneData(activeSceneId, `track:${member.dbId}:${suffix}`)
+                .catch(() => {});
+            }
+          }
+        }
+        setFadesMeta((prev) => prev.filter((f) => f.meta.groupId !== group.groupId));
+        const gone = new Set(group.members.map((m) => m.track.handle.id));
+        setTracks((prev) => prev.filter((t) => !gone.has(t.handle.id)));
+        host.showToast('success', 'Fade removed');
+      } catch (err: unknown) {
+        host.showToast(
+          'error',
+          'Failed to delete fade',
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    },
+    [host, adapter, activeSceneId, setFadesMeta, setTracks],
+  );
+
   // Auto re-sync drifted source sounds. A crossfade/fade COPIES each source's
   // sound onto its layer at creation; if the user later changes the source
   // track's sound, the transition is stale. Re-read source + layer sounds and,
@@ -705,5 +976,9 @@ export function useTransitionOps({
     handleCrossfadeSlider,
     handleFadeDelete,
     handleFadeSlider,
+    isCreatingGroupFade,
+    handleCreateVerbatimGroupFade,
+    handleGroupFadeSlider,
+    handleGroupFadeDelete,
   };
 }

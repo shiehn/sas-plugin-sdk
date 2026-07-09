@@ -16,6 +16,7 @@ export {
   type UseTransitionOpsInputs,
   type ResolvedCrossfadePair,
   type ResolvedFade,
+  type ResolvedGroupFade,
 } from './useTransitionOps';
 export { type GeneratorTrackState, newTrackState } from './track-state';
 export {
@@ -50,4 +51,6 @@ export type {
   PanelGroupExtension,
   GeneratorPanelAdapter,
   GeneratorPanelSlots,
+  VerbatimFadeMember,
+  PanelTransitionGroupAdapter,
 } from './adapter.types';

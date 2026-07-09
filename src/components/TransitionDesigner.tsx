@@ -76,14 +76,27 @@ export interface TransitionDesignerProps {
    * Build a crossfade pair — the panel's existing handler (create two tracks, one
    * morphed clip, copy each preset). Should reject on failure. Safe to call
    * concurrently.
+   *
+   * OMIT for a FADE-ONLY board (group families like bass, where a 1:1 MIDI
+   * crossfade is undefined): the two index-paired columns become two stacked
+   * one-sided sections (origin subjects fade out, target subjects fade in)
+   * with no drag/gap/pairing. @since optional in SDK 2.41.0
    */
-  onCreateCrossfade: (origin: CrossfadeSelection, target: CrossfadeSelection) => Promise<void>;
+  onCreateCrossfade?: (origin: CrossfadeSelection, target: CrossfadeSelection) => Promise<void>;
   /** Build a one-sided fade — the panel's existing handler. Should reject on failure. */
   onCreateFade: (
     selection: FadeSelection,
     direction: FadeDirection,
     gesture: FadeGesture,
   ) => Promise<void>;
+  /**
+   * Collapse a column's family tracks into designer SUBJECTS (group families:
+   * one cell per voice group, carrying the anchor's dbId). Applied per column
+   * after `listSceneFamilyTracks`. @since SDK 2.41.0
+   */
+  mapColumnSubjects?: (sceneId: string, tracks: SceneFamilyTrack[]) => Promise<SceneFamilyTrack[]>;
+  /** Per-row progress estimate override for fades (LLM-free creates). @since SDK 2.41.0 */
+  fadeEstimateMs?: number;
   /**
    * Build an AUDIO-only one-sided transition (stutter / chopped / delay). When
    * provided, one-sided rows render an effect selector; absent (MIDI panels) →
@@ -131,9 +144,13 @@ export function TransitionDesigner({
   onCreateCrossfade,
   onCreateFade,
   onCreateAudioTransition,
+  mapColumnSubjects,
+  fadeEstimateMs,
   familyLabel,
   testIdPrefix = 'transition-designer',
 }: TransitionDesignerProps): React.ReactElement {
+  // Fade-only board (group families): no pairing, no drag/gap/draft.
+  const fadeOnly = !onCreateCrossfade;
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   const [fromName, setFromName] = useState<string | null>(null);
   const [toName, setToName] = useState<string | null>(null);
@@ -191,9 +208,17 @@ export function TransitionDesigner({
     }
     setLoad({ status: 'loading' });
     try {
-      const [origin, target, fName, tName, draftRaw] = await Promise.all([
+      let [origin, target] = await Promise.all([
         host.listSceneFamilyTracks(fromSceneId),
         host.listSceneFamilyTracks(toSceneId),
+      ]);
+      if (mapColumnSubjects) {
+        [origin, target] = await Promise.all([
+          mapColumnSubjects(fromSceneId, origin),
+          mapColumnSubjects(toSceneId, target),
+        ]);
+      }
+      const [fName, tName, draftRaw] = await Promise.all([
         host.getSceneName ? host.getSceneName(fromSceneId) : Promise.resolve(null),
         host.getSceneName ? host.getSceneName(toSceneId) : Promise.resolve(null),
         host.getSceneData
@@ -220,7 +245,7 @@ export function TransitionDesigner({
         message: err instanceof Error ? err.message : 'Failed to load tracks.',
       });
     }
-  }, [host, fromSceneId, toSceneId, transitionSceneId]);
+  }, [host, fromSceneId, toSceneId, transitionSceneId, mapColumnSubjects]);
 
   // Fetch on mount (the panel mounts this only when the Transition view is active)
   // and whenever the bridged scenes change.
@@ -303,11 +328,33 @@ export function TransitionDesigner({
   );
 
   const rows = useMemo(() => buildRowSlots(originSlots, targetSlots), [originSlots, targetSlots]);
+  // Fade-only board: every occupied subject is its own one-sided row (no pairing).
+  const fadeOnlyRows = useMemo<DesignerRowSlots[]>(
+    () =>
+      fadeOnly
+        ? [
+            ...originPool.map((t) => ({
+              originId: t.dbId,
+              targetId: null,
+              type: 'fade-out' as TransitionRowType,
+            })),
+            ...targetPool.map((t) => ({
+              originId: null,
+              targetId: t.dbId,
+              type: 'fade-in' as TransitionRowType,
+            })),
+          ]
+        : [],
+    [fadeOnly, originPool, targetPool],
+  );
+  const fadeOnlyRowsRef = useRef(fadeOnlyRows);
+  fadeOnlyRowsRef.current = fadeOnlyRows;
+  const effectiveRows = fadeOnly ? fadeOnlyRows : rows;
   // Source dbIds with a create in flight — their cells lock (no drag / gap edits).
   const creatingDbIds = useMemo(() => dbIdsFromKeys(creatingKeys), [creatingKeys]);
   const eligibleCount = useMemo(
-    () => rows.filter((r) => { const k = rowKey(r); return k !== null && !creatingKeys.has(k); }).length,
-    [rows, creatingKeys],
+    () => effectiveRows.filter((r) => { const k = rowKey(r); return k !== null && !creatingKeys.has(k); }).length,
+    [effectiveRows, creatingKeys],
   );
 
   // Create ONE row. Concurrency-safe: keyed by source dbIds; reuses the panel's
@@ -328,6 +375,7 @@ export function TransitionDesigner({
           const o = row.originId ? originByIdRef.current.get(row.originId) : undefined;
           const t = row.targetId ? targetByIdRef.current.get(row.targetId) : undefined;
           if (!o || !t) throw new Error('Track is no longer available — refresh and retry.');
+          if (!onCreateCrossfade) throw new Error('This panel does not support crossfades.');
           await onCreateCrossfade(
             { dbId: o.dbId, name: o.name, role: o.role },
             { dbId: t.dbId, name: t.name, role: t.role },
@@ -369,7 +417,10 @@ export function TransitionDesigner({
 
   // Fire every eligible row through a bounded concurrency pool.
   const createAll = useCallback(async (): Promise<void> => {
-    const eligible = buildRowSlots(originSlotsRef.current, targetSlotsRef.current).filter((r) => {
+    const source = fadeOnly
+      ? fadeOnlyRowsRef.current
+      : buildRowSlots(originSlotsRef.current, targetSlotsRef.current);
+    const eligible = source.filter((r) => {
       const k = rowKey(r);
       return k !== null && !creatingKeysRef.current.has(k);
     });
@@ -385,7 +436,7 @@ export function TransitionDesigner({
     await Promise.all(
       Array.from({ length: Math.min(CREATE_ALL_CONCURRENCY, eligible.length) }, () => worker()),
     );
-  }, [createRow]);
+  }, [createRow, fadeOnly]);
 
   const fromLabel = fromName ?? 'origin';
   const toLabel = toName ?? 'target';
@@ -512,6 +563,153 @@ export function TransitionDesigner({
       </div>
     );
   };
+
+  // --- FADE-ONLY board (group families) -----------------------------------
+  // Two stacked one-sided sections instead of the index-paired columns: the
+  // drag/gap/draft machinery exists only to control PAIRING, so none of it
+  // renders here. Pools/exclude/row-keys/concurrency/progress are shared.
+  const renderFadeOnlyRow = (row: DesignerRowSlots, i: number): React.ReactElement => {
+    const slotId = (row.originId ?? row.targetId) as string;
+    const byId = row.type === 'fade-out' ? originById : targetById;
+    const track = byId.get(slotId);
+    const key = rowKey(row);
+    const isCreatingThis = key !== null && creatingKeys.has(key);
+    const errMsg = key !== null ? rowErrors[key] : undefined;
+    return (
+      <div
+        key={slotId}
+        data-testid={`${testIdPrefix}-row-${i}`}
+        className="grid grid-cols-[1fr_auto] gap-2 items-center"
+      >
+        <div
+          data-testid={`${testIdPrefix}-subject-${slotId}`}
+          className={`rounded-sm border border-sas-border bg-sas-panel px-2 py-1.5 ${
+            isCreatingThis ? 'opacity-60' : ''
+          }`}
+          title={track ? track.dbId : 'Track no longer available'}
+        >
+          <div className="text-xs text-sas-text truncate">
+            {track ? track.prompt?.trim() || track.name : slotId}
+          </div>
+          <div className="text-[10px] text-sas-muted truncate mt-0.5">
+            {track ? [track.role, shortId(track.dbId)].filter(Boolean).join(' · ') : 'missing'}
+          </div>
+        </div>
+        <div className="w-[160px] flex flex-col items-center gap-1">
+          <span
+            data-testid={`${testIdPrefix}-type-${i}`}
+            className="text-[10px] font-medium px-1.5 py-0.5 rounded-sm border border-sas-border text-sas-muted"
+          >
+            {row.type ? TYPE_LABEL[row.type] : '—'}
+          </span>
+          {isCreatingThis ? (
+            <div className="w-full">
+              <SorceryProgressBar
+                isLoading
+                heightClass="h-5"
+                statusText="CREATING"
+                estimatedDurationMs={fadeEstimateMs ?? FADE_ESTIMATE_MS}
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              data-testid={`${testIdPrefix}-create-${i}`}
+              onClick={() => createRow(row)}
+              className="w-full px-2 py-0.5 text-[10px] font-medium rounded-sm border transition-colors bg-sas-accent/20 border-sas-accent text-sas-accent hover:bg-sas-accent hover:text-sas-bg"
+            >
+              Create
+            </button>
+          )}
+          {errMsg && (
+            <span
+              data-testid={`${testIdPrefix}-row-error-${i}`}
+              className="text-[10px] text-sas-danger text-center leading-tight"
+            >
+              {errMsg}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  if (fadeOnly) {
+    const outRows = fadeOnlyRows.filter((r) => r.type === 'fade-out');
+    const inRows = fadeOnlyRows.filter((r) => r.type === 'fade-in');
+    return (
+      <div className="space-y-2" data-testid={`${testIdPrefix}-box`}>
+        {/* Header: hint + Create all */}
+        <div className="flex items-center justify-between gap-3 pb-1 border-b border-sas-border">
+          <p className="text-[11px] text-sas-muted leading-snug min-w-0">
+            <span className="text-sas-text">{fromLabel}</span> →{' '}
+            <span className="text-sas-text">{toLabel}</span>
+            {familyLabel ? ` · ${familyLabel}` : ''} · each entry fades on its own — origin fades
+            out, target fades in.
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            {creatingKeys.size > 0 && (
+              <span
+                className="text-[10px] text-sas-accent whitespace-nowrap"
+                data-testid={`${testIdPrefix}-creating-count`}
+              >
+                {creatingKeys.size} creating…
+              </span>
+            )}
+            <button
+              type="button"
+              data-testid={`${testIdPrefix}-create-all`}
+              onClick={createAll}
+              disabled={eligibleCount === 0}
+              title="Create every fade at once (runs several concurrently)"
+              className={`px-2 py-0.5 text-[10px] font-medium rounded-sm border transition-colors whitespace-nowrap ${
+                eligibleCount > 0
+                  ? 'bg-sas-accent/20 border-sas-accent text-sas-accent hover:bg-sas-accent hover:text-sas-bg'
+                  : 'bg-sas-panel border-sas-border text-sas-muted/50 cursor-not-allowed'
+              }`}
+            >
+              Create all{eligibleCount > 0 ? ` (${eligibleCount})` : ''}
+            </button>
+          </div>
+        </div>
+
+        {load.status === 'loading' && (
+          <div className="text-xs text-sas-muted py-6 text-center">Loading tracks…</div>
+        )}
+        {load.status === 'error' && (
+          <div className="text-xs text-sas-danger py-6 text-center" data-testid={`${testIdPrefix}-error`}>
+            {load.message}
+          </div>
+        )}
+        {load.status === 'ready' &&
+          (fadeOnlyRows.length === 0 ? (
+            <div className="text-xs text-sas-muted py-6 text-center" data-testid={`${testIdPrefix}-empty`}>
+              Nothing to fade in this panel for either scene. Add tracks to {fromLabel} or {toLabel}{' '}
+              first (or free one by deleting an existing fade).
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {outRows.length > 0 && (
+                <div className="space-y-2" data-testid={`${testIdPrefix}-fade-out-section`}>
+                  <span className="text-[10px] uppercase tracking-wide text-sas-muted">
+                    Origin ({fromLabel}) — fades out
+                  </span>
+                  {outRows.map((row, i) => renderFadeOnlyRow(row, i))}
+                </div>
+              )}
+              {inRows.length > 0 && (
+                <div className="space-y-2" data-testid={`${testIdPrefix}-fade-in-section`}>
+                  <span className="text-[10px] uppercase tracking-wide text-sas-muted">
+                    Target ({toLabel}) — fades in
+                  </span>
+                  {inRows.map((row, j) => renderFadeOnlyRow(row, outRows.length + j))}
+                </div>
+              )}
+            </div>
+          ))}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2" data-testid={`${testIdPrefix}-box`}>

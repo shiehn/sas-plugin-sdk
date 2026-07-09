@@ -19,6 +19,7 @@ import type { FxCategory } from '../types/fx-toggle.types';
 import { TrackRow, type SDKTrackRowProps } from '../components/TrackRow';
 import { CrossfadeTrackRow } from '../components/CrossfadeTrackRow';
 import { FadeTrackRow } from '../components/FadeTrackRow';
+import { GroupFadeTrackRow } from '../components/GroupFadeTrackRow';
 import { ImportTrackModal } from '../components/ImportTrackModal';
 import { TransitionDesigner } from '../components/TransitionDesigner';
 import { SorceryProgressBar } from '../components/SorceryProgressBar';
@@ -63,7 +64,8 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
     fadesMeta,
     resolvedCrossfadePairs,
     crossfadeMemberDbIds,
-    resolvedFades,
+    resolvedSingleFades,
+    resolvedGroupFades,
     fadeMemberDbIds,
     resolvedGenericGroups,
     genericGroupMemberDbIds,
@@ -341,8 +343,20 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
               ...crossfadePairsMeta.flatMap((p) => [p.originSourceDbId, p.targetSourceDbId]),
               ...fadesMeta.map((f) => f.meta.sourceTrackDbId),
             ]}
-            onCreateCrossfade={transition.handleCreateCrossfade}
-            onCreateFade={transition.handleCreateFade}
+            onCreateCrossfade={
+              adapter.transitionGroup?.fadeOnly ? undefined : transition.handleCreateCrossfade
+            }
+            onCreateFade={
+              adapter.transitionGroup
+                ? (sel, dir) => transition.handleCreateVerbatimGroupFade(sel, dir)
+                : transition.handleCreateFade
+            }
+            mapColumnSubjects={
+              adapter.transitionGroup
+                ? (sceneId, tracks) => adapter.transitionGroup!.mapColumnSubjects(sceneId, tracks)
+                : undefined
+            }
+            fadeEstimateMs={adapter.transitionGroup?.fadeEstimateMs}
             familyLabel={identity.familyLabel}
             testIdPrefix={`${identity.familyKey}-transition-designer`}
           />
@@ -413,7 +427,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
                 onDelete={() => transition.handleCrossfadeDelete(pair)}
               />
             ))}
-            {resolvedFades.map((fade) => (
+            {resolvedSingleFades.map((fade) => (
               <FadeTrackRow
                 key={fade.dbId}
                 accentColor={identity.transitionAccentColor}
@@ -437,12 +451,58 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
                 onDelete={() => transition.handleFadeDelete(fade)}
               />
             ))}
+            {resolvedGroupFades.map((group) => (
+              <GroupFadeTrackRow
+                key={group.groupId}
+                accentColor={identity.transitionAccentColor}
+                levels={supportsMeters ? trackLevels : undefined}
+                direction={group.direction}
+                gesture={group.gesture}
+                sliderPos={group.sliderPos}
+                groupLabel={
+                  adapter.transitionGroup?.groupRowLabel?.(group.members.length) ??
+                  `Group (${group.members.length} tracks)`
+                }
+                members={group.members.map((m) => ({
+                  trackId: m.track.handle.id,
+                  name: m.track.handle.name,
+                  role: m.track.role,
+                  sourceName: m.meta.sourceName,
+                  soundLabel: m.meta.soundLabel,
+                  memberLabel: m.meta.memberLabel,
+                  runtimeState: m.track.runtimeState,
+                }))}
+                onMemberMuteToggle={(trackId: string) => handlers.muteToggle(trackId)}
+                onMemberSoloToggle={(trackId: string) => handlers.soloToggle(trackId)}
+                onMemberVolumeChange={(trackId: string, vol: number) => handlers.volumeChange(trackId, vol)}
+                onMemberPanChange={(trackId: string, pan: number) => handlers.panChange(trackId, pan)}
+                onMuteAll={() =>
+                  setGroupMute(
+                    group.members.map((m) => m.track.handle.id),
+                    !group.members.every((m) => m.track.runtimeState.muted),
+                  )
+                }
+                onSoloAll={() =>
+                  setGroupSolo(
+                    group.members.map((m) => m.track.handle.id),
+                    !group.members.every((m) => m.track.runtimeState.solo),
+                  )
+                }
+                onSliderChange={(pos: number) => transition.handleGroupFadeSlider(group, pos)}
+                onDelete={() => transition.handleGroupFadeDelete(group)}
+              />
+            ))}
             {(adapter.groupExtensions ?? []).flatMap((ext) =>
-              (resolvedGenericGroups[ext.metaKey]?.resolved ?? []).map((group) => (
-                <React.Fragment key={`${ext.metaKey}:${group.groupId}`}>
-                  {ext.renderGroup(group, groupCtx)}
-                </React.Fragment>
-              )),
+              (resolvedGenericGroups[ext.metaKey]?.resolved ?? [])
+                // A GROUP FADE's copies carry BOTH the family group meta and a
+                // fade meta — the GroupFadeTrackRow above owns them. Deleting
+                // the fade metas degrades back to a normal family group row.
+                .filter((group) => !group.members.every((m) => fadeMemberDbIds.has(m.dbId)))
+                .map((group) => (
+                  <React.Fragment key={`${ext.metaKey}:${group.groupId}`}>
+                    {ext.renderGroup(group, groupCtx)}
+                  </React.Fragment>
+                )),
             )}
             {tracks.map((track: GeneratorTrackState, index: number) => {
               if (

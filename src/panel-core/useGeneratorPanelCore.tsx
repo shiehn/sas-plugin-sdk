@@ -31,7 +31,7 @@ import { useSoundHistory, type TrackSoundHistory } from '../hooks/useSoundHistor
 import { useTrackReorder, type UseTrackReorderResult } from '../hooks/useTrackReorder';
 import { useTrackLevels, type TrackLevelsHandle } from '../hooks/useTrackLevels';
 import { parseCrossfadePairs, type CrossfadePairMeta } from '../crossfade-meta';
-import { parseFades, type FadeEntry } from '../fade-meta';
+import { parseFades, splitFadeEntries, type FadeEntry } from '../fade-meta';
 import type { DrawerTab } from '../components/TrackDrawer';
 import { type GeneratorTrackState, newTrackState } from './track-state';
 import { pluginFxToToggleFx, trackDataKey } from './panel-helpers';
@@ -52,6 +52,7 @@ import {
   type TransitionOps,
   type ResolvedCrossfadePair,
   type ResolvedFade,
+  type ResolvedGroupFade,
 } from './useTransitionOps';
 
 const EMPTY_PLACEHOLDERS: BulkAddPlaceholderTrack[] = [];
@@ -119,6 +120,10 @@ export interface GeneratorPanelCore {
   crossfadeMemberDbIds: Set<string>;
   resolvedFades: ResolvedFade[];
   fadeMemberDbIds: Set<string>;
+  /** Classic single-track fades (resolvedFades minus group members). @since SDK 2.41.0 */
+  resolvedSingleFades: ResolvedFade[];
+  /** Verbatim group fades, memberIndex-ordered. @since SDK 2.41.0 */
+  resolvedGroupFades: ResolvedGroupFade[];
 
   // Generic group extensions
   resolvedGenericGroups: Record<string, ResolvedGroupsResult<unknown, GeneratorTrackState>>;
@@ -1493,6 +1498,13 @@ export function useGeneratorPanelCore({
     return { resolvedFades: list, fadeMemberDbIds: members };
   }, [tracks, fadesMeta]);
 
+  // Split for rendering only: classic single fades vs verbatim GROUP fades.
+  // Drift-resync + curve re-apply keep iterating the FLAT resolvedFades list.
+  const { singles: resolvedSingleFades, groups: resolvedGroupFades } = useMemo(
+    () => splitFadeEntries(resolvedFades),
+    [resolvedFades],
+  );
+
   // --- Transition ops (create/controls/effects) ---------------------------
   const transition = useTransitionOps({
     host,
@@ -1636,6 +1648,8 @@ export function useGeneratorPanelCore({
     crossfadeMemberDbIds,
     resolvedFades,
     fadeMemberDbIds,
+    resolvedSingleFades,
+    resolvedGroupFades,
     resolvedGenericGroups,
     genericGroupMemberDbIds,
     availableInstruments,
