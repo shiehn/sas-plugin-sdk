@@ -121,6 +121,9 @@ export type {
   InstrumentZone,
   InstrumentSampler,
   ListAudioFilesOptions,
+  // Reference pinning + active-scene track enumeration (since SDK 2.42.0)
+  PluginGenerationContextOptions,
+  SceneTrackSummary,
 } from './types/plugin-sdk.types';
 
 export { PluginError } from './types/plugin-sdk.types';
@@ -292,6 +295,15 @@ export { synthesizeCuePoints, type SynthesizeCuePointsOptions } from './componen
 // ============================================================================
 
 export * from './panel-core';
+
+// ============================================================================
+// Ensemble core — multi-voice (counterpoint/ensemble) generation primitives:
+// voice specs, hard per-voice enforcement, soft cross-voice analysis, style
+// packs, the submit_ensemble function-calling contract, joint prompt.
+// Since 2.42.0.
+// ============================================================================
+
+export * from './ensemble-core';
 
 // ============================================================================
 // Hooks

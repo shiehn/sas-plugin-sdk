@@ -660,8 +660,15 @@ export interface PluginHost {
 
   // --- Scene Context (read-only) ---
 
-  /** Get the FULL generation context for the active scene. */
-  getGenerationContext(excludeTrackId?: string): Promise<PluginGenerationContext>;
+  /**
+   * Get the FULL generation context for the active scene. Pass
+   * `opts.pinTrackDbIds` to pin reference tracks past the note budget
+   * (see `PluginGenerationContextOptions`). @since SDK 2.42.0 (opts)
+   */
+  getGenerationContext(
+    excludeTrackId?: string,
+    opts?: PluginGenerationContextOptions
+  ): Promise<PluginGenerationContext>;
 
   /** Get lightweight musical context (no concurrent track MIDI data). */
   getMusicalContext(): Promise<MusicalContext>;
@@ -742,6 +749,17 @@ export interface PluginHost {
    * @since SDK 2.22.0
    */
   listSceneFamilyTracks?(sceneDbId: string): Promise<SceneFamilyTrack[]>;
+
+  /**
+   * Enumerate ALL tracks in the ACTIVE scene — unfiltered by plugin family or
+   * ownership (unlike `listSceneFamilyTracks`). Read-only; names are
+   * display-only per the Track Identity rule (use `dbId` for any lookup).
+   * Powers reference-track pickers ("write in counterpoint against these") —
+   * the returned `dbId`s feed `PluginGenerationContextOptions.pinTrackDbIds`.
+   * Returns [] when no project/scene is bound. Optional — callers MUST
+   * null-check (see `listImportableTracks`). @since SDK 2.42.0
+   */
+  listSceneTracks?(): Promise<SceneTrackSummary[]>;
 
   /**
    * Read a specific scene's musical key (tonic + mode) by db id. Labels the
@@ -1728,6 +1746,25 @@ export interface ImportCandidateScene {
 }
 
 /**
+ * One track in the ACTIVE scene, returned by `host.listSceneTracks` —
+ * unfiltered by family/ownership. `name` is display-only (Track Identity
+ * rule); `dbId` is the stable selector for `pinTrackDbIds`.
+ * @since SDK 2.42.0
+ */
+export interface SceneTrackSummary {
+  /** Stable DB row id (`tracks.id`). */
+  dbId: string;
+  /** Display name — never use as an identifier. */
+  name: string;
+  /** Canonical role (`InstrumentType`) when stamped. */
+  role?: string;
+  /** User-typed prompt that produced the track, when stored. */
+  prompt?: string;
+  /** True when the track has saved MIDI (i.e. it can serve as a reference). */
+  hasMidi: boolean;
+}
+
+/**
  * A source track's current sound, as returned by `host.getTrackSound`. The
  * discriminant matches the panel that reads it: drums → 'sample', instruments →
  * 'instrument', synths → 'preset'. `label` is the human name for the History row.
@@ -2017,6 +2054,36 @@ export interface PluginConcurrentTrackInfo {
   truncated?: boolean;
   /** The track's full note count before per-track truncation. */
   originalNoteCount?: number;
+  /**
+   * Track display name — CONTEXT/DISPLAY ONLY (prompts, pickers). Never an
+   * identifier: names are non-unique and mutable; use `trackId`/`dbId` for
+   * any lookup. @since SDK 2.42.0
+   */
+  name?: string;
+  /** Stable DB row id (`tracks.id`) — correlates with `pinTrackDbIds` and
+   *  `listSceneTracks()` entries. @since SDK 2.42.0 */
+  dbId?: string;
+  /**
+   * True when this track was pinned via
+   * `PluginGenerationContextOptions.pinTrackDbIds` — i.e. it is REFERENCE
+   * material the caller explicitly asked to write against, exempt from the
+   * note budget. Formatters render pinned tracks in a distinct REFERENCE
+   * block. @since SDK 2.42.0
+   */
+  pinned?: boolean;
+}
+
+/**
+ * Options for `getGenerationContext`. @since SDK 2.42.0
+ */
+export interface PluginGenerationContextOptions {
+  /**
+   * DB row ids (`tracks.id`) of reference tracks that must ALWAYS be included
+   * whole — exempt from the cross-track note budget (ambient tracks fill the
+   * remaining budget). Powers "write in counterpoint against THESE tracks".
+   * Unknown ids and tracks without saved MIDI are ignored.
+   */
+  pinTrackDbIds?: readonly string[];
 }
 
 export interface PluginChordSegment {
