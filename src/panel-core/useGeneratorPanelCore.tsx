@@ -582,6 +582,16 @@ export function useGeneratorPanelCore({
         ...adapter.createTrackOptions(),
       });
       setTracks((prev) => [...prev, newTrackState(handle)]);
+      // Family stamping hook (e.g. arp: anchor-of-one voice-group) + reload so
+      // stamped group metas resolve before the user interacts with the row.
+      if (adapter.onTrackCreated) {
+        try {
+          await adapter.onTrackCreated(handle, { activeSceneId, trackDataKey });
+        } catch (err: unknown) {
+          console.warn(`[${logTag}] onTrackCreated failed (non-fatal):`, err);
+        }
+        await loadTracks(true);
+      }
       onExpandSelf?.();
       // Auto-focus the prompt input of the newly created track after the
       // accordion animation.
@@ -600,7 +610,7 @@ export function useGeneratorPanelCore({
       isAddingTrackRef.current = false;
       setIsAddingTrack(false);
     }
-  }, [host, adapter, identity, activeSceneId, isConnected, isAuthenticated, tracks.length, onExpandSelf]);
+  }, [host, adapter, identity, activeSceneId, isConnected, isAuthenticated, tracks.length, onExpandSelf, loadTracks, logTag]);
 
   // --- Port track (cross-panel import) -----------------------------------
   // Pull a MIDI part out of a track owned by ANOTHER panel in THIS scene and
@@ -647,6 +657,14 @@ export function useGeneratorPanelCore({
         }
         // Native, role-appropriate family sound (adapter owns non-fatality).
         await adapter.applyPortedTrackSound(handle, sel.role);
+        // Same stamping hook as Add Track (loadTracks below resolves metas).
+        if (adapter.onTrackCreated) {
+          try {
+            await adapter.onTrackCreated(handle, { activeSceneId, trackDataKey });
+          } catch {
+            /* non-fatal — the ported track lands as a plain row */
+          }
+        }
         host.showToast(
           'success',
           `Imported to ${identity.familyKey}`,

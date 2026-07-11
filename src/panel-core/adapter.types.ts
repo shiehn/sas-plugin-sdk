@@ -343,6 +343,14 @@ export interface PanelTransitionGroupAdapter {
 // The adapter
 // ============================================================================
 
+/** What `onTrackCreated` gets to work with (Add Track is scene-gated, so the scene is non-null). */
+export interface TrackCreatedContext {
+  /** Scene the track was created in. */
+  activeSceneId: string;
+  /** The ONE scene-data key builder (always dbId-based). */
+  trackDataKey: (dbId: string, suffix: string) => string;
+}
+
 export interface GeneratorPanelAdapter<M = unknown> {
   identity: PanelIdentity;
   features: PanelFeatureFlags;
@@ -353,6 +361,18 @@ export interface GeneratorPanelAdapter<M = unknown> {
    * Synth: `host.shufflePreset(handle.id)` non-fatal.
    */
   applyPortedTrackSound(handle: PluginTrackHandle, role?: string): Promise<void>;
+  /**
+   * Optional hook run right after a track is born (Add Track / Import Track).
+   * Lets a family stamp per-track scene-data on the newborn — e.g. the arp
+   * panel anchors every new track as a voice-group of ONE so the group
+   * header's intent controls (voice count / rate / split) exist BEFORE the
+   * first generation instead of appearing only after it (which wasted a
+   * throwaway generation on defaults). The core reloads tracks after the hook
+   * so stamped group metas resolve immediately. Failures are non-fatal — the
+   * track lands as a plain row.
+   * @since SDK 2.43.0
+   */
+  onTrackCreated?(handle: PluginTrackHandle, ctx: TrackCreatedContext): Promise<void>;
   /** System prompt for the family's LLM calls (incl. core-owned crossfade/fade generation). */
   buildSystemPrompt(validRoles: readonly string[]): string;
   /** Parse the family's LLM note responses (crossfade/fade flows). */
