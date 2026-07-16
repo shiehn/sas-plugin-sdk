@@ -72,6 +72,7 @@ export type {
   LLMCandidate,
   LLMToolUseResponse,
   PluginPresetData,
+  ShufflePresetOptions,
   ShufflePresetResult,
   SoundHistoryEntry,
   PluginSettingsSchema,

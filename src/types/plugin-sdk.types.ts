@@ -398,8 +398,17 @@ export interface PluginHost {
    * pool; the current preset is always implicitly excluded. Use this to
    * implement a "no-repeat until full cycle" shuffle: the panel accumulates
    * the history and resets when shufflePreset throws "no presets available".
+   *
+   * `options.description` (since SDK 2.44.0) is the user's sound description
+   * for semantic retrieval — when the host's patch index is available the pick
+   * is vector-proximity against this text instead of random-within-category.
+   * Pass the live prompt from panel state (host-side stored prompts are
+   * debounced and may lag). Member voices of a group should pass the ANCHOR's
+   * prompt, optionally suffixed with the voice label ("horn section — bass
+   * register"). Omitting it falls back to the prompt stored on the track, and
+   * failing that, the legacy random pick.
    */
-  shufflePreset(trackId: string, excludeNames?: readonly string[]): Promise<ShufflePresetResult>;
+  shufflePreset(trackId: string, excludeNames?: readonly string[], options?: ShufflePresetOptions): Promise<ShufflePresetResult>;
 
   /** Duplicate track: copy MIDI + role to a new track with a different preset. Only works on owned tracks. */
   duplicateTrack(trackId: string): Promise<PluginTrackHandle>;
@@ -2347,6 +2356,19 @@ export interface PluginPresetData {
   category: string;
   /** Base64-encoded plugin state — pass to setPluginState() */
   state: string;
+}
+
+/**
+ * Options for shufflePreset().
+ * @since SDK 2.44.0
+ */
+export interface ShufflePresetOptions {
+  /**
+   * The user's sound description ("muted trumpet", "warm analog pads").
+   * Enables semantic (vector-proximity) preset retrieval on hosts that ship a
+   * patch index; hosts without one ignore it and pick random-within-category.
+   */
+  description?: string;
 }
 
 /** Result of shufflePreset() — the new preset that was applied */
