@@ -111,7 +111,7 @@ const [prompts, setPrompts, setPromptsForScene] = useSceneState(activeSceneId, {
 
 ```typescript
 import {
-  PLUGIN_SDK_VERSION,      // '2.8.0'
+  PLUGIN_SDK_VERSION,      // current API version — see src/constants/sdk-version.ts
   FX_CATEGORIES,           // ['eq', 'compressor', 'chorus', 'phaser', 'delay', 'reverb']
   FX_PRESET_CONFIGS,       // Preset definitions for all 6 FX categories
 } from '@signalsandsorcery/plugin-sdk';
