@@ -22,6 +22,7 @@ import { VolumeSlider } from './VolumeSlider';
 import { PanSlider } from './PanSlider';
 import { SorceryProgressBar } from './SorceryProgressBar';
 import type { TrackFxDetailState, FxCategory } from '../types/fx-toggle.types';
+import { promptEnterToGenerate } from '../panel-core/panel-helpers';
 
 // ============================================================================
 // Props
@@ -236,12 +237,7 @@ export function TrackRow({
   const fxTabOpen = drawerOpen && drawerTab === 'fx';
   const soundTabOpen = drawerOpen && drawerTab !== 'fx';
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter' && !e.shiftKey && onGenerate) {
-      e.preventDefault();
-      onGenerate();
-    }
-  };
+  const handleKeyDown = promptEnterToGenerate(() => onGenerate?.(), !onGenerate);
 
   // Amber pulse class for "needs generation" state
   const borderColorStyle = needsGeneration

@@ -23,6 +23,7 @@ export {
   trackDataKey,
   pluginFxToToggleFx,
   parseLLMNoteResponse,
+  promptEnterToGenerate,
   type LLMNoteResponse,
 } from './panel-helpers';
 export {

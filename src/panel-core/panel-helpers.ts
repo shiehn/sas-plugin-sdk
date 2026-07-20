@@ -6,12 +6,34 @@
  * @since SDK 2.35.0
  */
 
+import type { KeyboardEvent } from 'react';
 import type {
   PluginTrackFxDetailState,
   PluginFxCategoryDetailState,
   PluginMidiNote,
 } from '../types/plugin-sdk.types';
 import { EMPTY_FX_DETAIL_STATE, type TrackFxDetailState } from '../types/fx-toggle.types';
+
+/**
+ * Default prompt-field keyboard behavior: Enter (without Shift) fires the
+ * Generate action, exactly like clicking the Generate button. The SDK
+ * TrackRow's own prompt input uses this; group headers that render their OWN
+ * prompt input (bass / ensemble / arp / pad stacks) must attach it too so
+ * Enter is never a dead key while the button sits right next to the field.
+ *
+ * @since SDK 2.36.0
+ */
+export function promptEnterToGenerate(
+  generate: () => void,
+  disabled = false,
+): (e: KeyboardEvent<HTMLInputElement>) => void {
+  return (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !disabled) {
+      e.preventDefault();
+      generate();
+    }
+  };
+}
 
 /**
  * Build a scene plugin_data key for a track-scoped value. Scene-data keys are

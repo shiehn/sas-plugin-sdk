@@ -257,6 +257,7 @@ export {
   cellToPx,
   resizeNoteDuration,
   centerScrollTop,
+  effectivePxPerBeat,
   transposeNotes,
   pitchToName,
 } from './components/PianoRollEditor';

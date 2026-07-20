@@ -15,7 +15,10 @@
  *
  * Coordinate spaces:
  *   pitch (0-127)  ── row = hi - pitch ──  top px  = row * ROW_HEIGHT
- *   beat (¼ notes) ─────────────────────── left px = beat * PX_PER_BEAT
+ *   beat (¼ notes) ─────────────────────── left px = beat * pxPerBeat
+ * where pxPerBeat is the EFFECTIVE horizontal scale: at least PX_PER_BEAT
+ * (long clips overflow into a horizontal scroll), stretched up so short clips
+ * fill the viewport width (see effectivePxPerBeat).
  *
  * The pure helpers (`cellToPx` / `pxToCell` / `transposeNotes`) and layout
  * constants are exported so coordinate math can be unit-tested without a DOM.
@@ -27,7 +30,12 @@ import type { PluginMidiNote } from '../types/plugin-sdk.types';
 // Layout constants (exported for tests)
 // ============================================================================
 
-/** Horizontal pixels per quarter-note beat. */
+/**
+ * MINIMUM horizontal pixels per quarter-note beat. The grid never renders
+ * tighter than this (long clips overflow into a horizontal scroll), but it
+ * stretches beyond it to fill the container when the clip is short — see
+ * {@link effectivePxPerBeat}.
+ */
 export const PX_PER_BEAT = 24;
 /** Vertical pixels per semitone row. */
 export const ROW_HEIGHT = 12;
@@ -63,6 +71,20 @@ function snapLabel(s: number): string {
 // Pure helpers (DOM-free, exported for unit tests)
 // ============================================================================
 
+/**
+ * Pixels per beat for a grid of `totalBeats` inside a `containerWidth`-px
+ * scroll viewport (which also holds the {@link GUTTER_W} keyboard gutter).
+ * Fills the available width when the clip is short; never drops below
+ * {@link PX_PER_BEAT}, so long clips overflow into a horizontal scroll.
+ * An unknown/unmeasured container (≤ gutter width) yields the minimum.
+ */
+export function effectivePxPerBeat(containerWidth: number, totalBeats: number): number {
+  if (totalBeats <= 0) return PX_PER_BEAT;
+  const available = containerWidth - GUTTER_W;
+  if (available <= 0) return PX_PER_BEAT;
+  return Math.max(PX_PER_BEAT, available / totalBeats);
+}
+
 /** MIDI pitch → scientific note name (60 = C4). */
 export function pitchToName(pitch: number): string {
   const name = NOTE_NAMES[((pitch % 12) + 12) % 12];
@@ -72,14 +94,16 @@ export function pitchToName(pitch: number): string {
 
 /**
  * Cell (pitch, startBeat) → top-left pixel offset within the grid.
- * `hi` is the highest (top) visible pitch.
+ * `hi` is the highest (top) visible pitch. `pxPerBeat` is the effective
+ * (possibly stretched) horizontal scale; defaults to the minimum.
  */
 export function cellToPx(
   pitch: number,
   startBeat: number,
   hi: number,
+  pxPerBeat: number = PX_PER_BEAT,
 ): { left: number; top: number } {
-  return { left: startBeat * PX_PER_BEAT, top: (hi - pitch) * ROW_HEIGHT };
+  return { left: startBeat * pxPerBeat, top: (hi - pitch) * ROW_HEIGHT };
 }
 
 /**
@@ -94,10 +118,11 @@ export function pxToCell(
   snap: number,
   bars: number,
   beatsPerBar: number,
+  pxPerBeat: number = PX_PER_BEAT,
 ): { pitch: number; startBeat: number } {
   const totalBeats = bars * beatsPerBar;
   const pitch = clamp(hi - Math.floor(localY / ROW_HEIGHT), 0, 127);
-  const rawBeat = localX / PX_PER_BEAT;
+  const rawBeat = localX / pxPerBeat;
   const snapped = Math.round(rawBeat / snap) * snap;
   const startBeat = clamp(snapped, 0, Math.max(0, totalBeats - snap));
   return { pitch, startBeat };
@@ -115,9 +140,10 @@ export function resizeNoteDuration(
   snap: number,
   bars: number,
   beatsPerBar: number,
+  pxPerBeat: number = PX_PER_BEAT,
 ): number {
   const totalBeats = bars * beatsPerBar;
-  const snappedEnd = Math.round(localX / PX_PER_BEAT / snap) * snap;
+  const snappedEnd = Math.round(localX / pxPerBeat / snap) * snap;
   const end = clamp(snappedEnd, startBeat + snap, totalBeats);
   return end - startBeat;
 }
@@ -162,7 +188,7 @@ export interface PianoRollEditorProps {
   notes: readonly PluginMidiNote[];
   /** Emitted on every edit (add / delete / move / transpose) with the full next array. */
   onChange: (next: PluginMidiNote[]) => void;
-  /** Scene length in bars → grid width = bars * beatsPerBar * PX_PER_BEAT. */
+  /** Scene length in bars → grid width = bars * beatsPerBar * pxPerBeat (min PX_PER_BEAT, stretched to fill). */
   bars: number;
   /** BPM — used only for audition timing in v1. */
   bpm: number;
@@ -252,17 +278,34 @@ export function PianoRollEditor({
 
   const rowCount = hi - lo + 1;
   const totalBeats = bars * beatsPerBar;
-  const gridWidth = totalBeats * PX_PER_BEAT;
+
+  // Track the scroll viewport's width so short clips stretch to fill it while
+  // long clips keep the PX_PER_BEAT floor and overflow into a horizontal
+  // scroll. jsdom / pre-measure renders report 0 → floor scale.
+  const [containerW, setContainerW] = useState(0);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = (): void => setContainerW(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return (): void => ro.disconnect();
+  }, []);
+
+  const pxPerBeat = effectivePxPerBeat(containerW, totalBeats);
+  const gridWidth = totalBeats * pxPerBeat;
   const gridHeight = rowCount * ROW_HEIGHT;
 
   // Latest values for the stable pointer handlers — avoids stale closures and
   // handler re-binding (the documented render-loop hazard). Assigned during
   // render so the handlers always read current props/state.
   const stateRef = useRef({
-    notes, onChange, snapState, hi, bars, beatsPerBar, defaultVelocity, bpm, onAuditionNote, disabled,
+    notes, onChange, snapState, hi, bars, beatsPerBar, defaultVelocity, bpm, onAuditionNote, disabled, pxPerBeat,
   });
   stateRef.current = {
-    notes, onChange, snapState, hi, bars, beatsPerBar, defaultVelocity, bpm, onAuditionNote, disabled,
+    notes, onChange, snapState, hi, bars, beatsPerBar, defaultVelocity, bpm, onAuditionNote, disabled, pxPerBeat,
   };
 
   const localCoords = useCallback((clientX: number, clientY: number): { x: number; y: number } => {
@@ -305,7 +348,7 @@ export function PianoRollEditor({
     if (drag.mode === 'resize') {
       const note = s.notes[drag.index];
       if (!note) return;
-      const durationBeats = resizeNoteDuration(note.startBeat, x, s.snapState, s.bars, s.beatsPerBar);
+      const durationBeats = resizeNoteDuration(note.startBeat, x, s.snapState, s.bars, s.beatsPerBar, s.pxPerBeat);
       if (durationBeats === note.durationBeats) return;
       const next = s.notes.map((n, i) => (i === drag.index ? { ...n, durationBeats } : n));
       s.onChange(next);
@@ -313,7 +356,7 @@ export function PianoRollEditor({
     }
 
     if (drag.mode !== 'drag') return;
-    const { pitch, startBeat } = pxToCell(x, y, s.hi, s.snapState, s.bars, s.beatsPerBar);
+    const { pitch, startBeat } = pxToCell(x, y, s.hi, s.snapState, s.bars, s.beatsPerBar, s.pxPerBeat);
     const next = s.notes.map((n, i) => (i === drag.index ? { ...n, pitch, startBeat } : n));
     s.onChange(next);
   }, [localCoords]);
@@ -333,7 +376,7 @@ export function PianoRollEditor({
     }
     if (drag.mode === 'pending-add') {
       const { x, y } = localCoords(e.clientX, e.clientY);
-      const { pitch, startBeat } = pxToCell(x, y, s.hi, s.snapState, s.bars, s.beatsPerBar);
+      const { pitch, startBeat } = pxToCell(x, y, s.hi, s.snapState, s.bars, s.beatsPerBar, s.pxPerBeat);
       const note: PluginMidiNote = {
         pitch,
         startBeat,
@@ -397,14 +440,14 @@ export function PianoRollEditor({
   // Beat columns + bar columns + row lines, drawn purely in CSS so the only
   // hit-testable DOM in the grid is the notes themselves.
   const gridBg = useMemo((): string => {
-    const beatPx = PX_PER_BEAT;
-    const barPx = PX_PER_BEAT * beatsPerBar;
+    const beatPx = pxPerBeat;
+    const barPx = pxPerBeat * beatsPerBar;
     return [
       `repeating-linear-gradient(to right, transparent 0 ${beatPx - 1}px, rgba(255,255,255,0.06) ${beatPx - 1}px ${beatPx}px)`,
       `repeating-linear-gradient(to right, transparent 0 ${barPx - 1}px, rgba(255,255,255,0.16) ${barPx - 1}px ${barPx}px)`,
       `repeating-linear-gradient(to bottom, transparent 0 ${ROW_HEIGHT - 1}px, rgba(255,255,255,0.04) ${ROW_HEIGHT - 1}px ${ROW_HEIGHT}px)`,
     ].join(', ');
-  }, [beatsPerBar]);
+  }, [beatsPerBar, pxPerBeat]);
 
   const octaveDisabled = disabled || notes.length === 0;
 
@@ -502,8 +545,8 @@ export function PianoRollEditor({
             onPointerCancel={handlePointerCancel}
           >
             {notes.map((n, i) => {
-              const { left, top } = cellToPx(n.pitch, n.startBeat, hi);
-              const width = Math.max(3, n.durationBeats * PX_PER_BEAT);
+              const { left, top } = cellToPx(n.pitch, n.startBeat, hi, pxPerBeat);
+              const width = Math.max(3, n.durationBeats * pxPerBeat);
               // Handle never exceeds half the note, so even a 1-step note keeps a
               // left "body" zone for moving.
               const handleW = Math.min(RESIZE_HANDLE_PX, width / 2);
