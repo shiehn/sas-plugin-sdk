@@ -270,6 +270,7 @@ export { usePanelBus, type UsePanelBusResult } from './hooks/usePanelBus';
 export { TrackExternalFxSection, type TrackExternalFxSectionProps } from './components/TrackExternalFxSection';
 export { useTrackExternalFx, type UseTrackExternalFxResult } from './hooks/useTrackExternalFx';
 export { TrackFreezeSection, type TrackFreezeSectionProps } from './components/TrackFreezeSection';
+export { useTrackFreeze, type UseTrackFreezeResult } from './hooks/useTrackFreeze';
 export { PanSlider } from './components/PanSlider';
 export { FxToggleBar, type FxToggleBarProps } from './components/FxToggleBar';
 export { SorceryProgressBar, calculateTimeBasedTarget } from './components/SorceryProgressBar';

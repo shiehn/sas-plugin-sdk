@@ -18,13 +18,14 @@
  * backwards compatibility.)
  */
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import type { InstrumentDescriptor, PluginHost, SoundHistoryEntry, PluginMidiNote, TrackFreezeState } from '../types/plugin-sdk.types';
+import React, { useState, useMemo } from 'react';
+import type { InstrumentDescriptor, PluginHost, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
 import type { FxCategory, TrackFxDetailState } from '../types/fx-toggle.types';
 import { FxToggleBar } from './FxToggleBar';
 import { PianoRollEditor } from './PianoRollEditor';
 import { TrackExternalFxSection } from './TrackExternalFxSection';
 import { TrackFreezeSection } from './TrackFreezeSection';
+import { useTrackFreeze, type UseTrackFreezeResult } from '../hooks/useTrackFreeze';
 
 // ============================================================================
 // Tabs
@@ -68,6 +69,13 @@ export interface TrackDrawerProps {
    * FX tab.
    */
   externalFxHost?: PluginHost;
+
+  /**
+   * Lifted freeze state (@since SDK 2.47.0) — TrackRow owns useTrackFreeze
+   * so its ❄ badge and this drawer share one state. When omitted, the drawer
+   * runs its own hook off `externalFxHost` (direct-use backward compat).
+   */
+  freeze?: UseTrackFreezeResult;
 
   // --- Pick tab (enabled when onSelect is provided) ---
   /** Available instrument plugins from engine scan. */
@@ -132,6 +140,7 @@ export function TrackDrawer({
   onFxDryWetChange,
   fxDisabled = false,
   externalFxHost,
+  freeze,
   instruments = [],
   currentPluginId = null,
   isLoading = false,
@@ -165,49 +174,15 @@ export function TrackDrawer({
   // Freeze tab (@since SDK 2.46.0): rides the SAME host the FX tab already
   // receives from every panel, feature-detected — old hosts simply don't
   // grow the tab, so panels need no changes.
-  const freezeEnabled =
-    !!externalFxHost && typeof externalFxHost.getTrackFreezeState === 'function';
-
-  // The drawer (not the section) owns freeze state: it also locks the
-  // sound-editing tabs while frozen, which must apply before the user ever
-  // opens the Freeze tab.
-  const [freezeState, setFreezeState] = useState<TrackFreezeState | null>(null);
-  const [freezeBusy, setFreezeBusy] = useState<'freeze' | 'unfreeze' | null>(null);
-  const [freezeError, setFreezeError] = useState<string | null>(null);
-
-  const refreshFreeze = useCallback(async (): Promise<void> => {
-    if (!freezeEnabled || !externalFxHost?.getTrackFreezeState) return;
-    try {
-      setFreezeState(await externalFxHost.getTrackFreezeState(trackId));
-    } catch {
-      // Non-fatal (e.g. sample/audio tracks refuse) — the tab shows a
-      // reading state and the lock stays off.
-      setFreezeState(null);
-    }
-  }, [freezeEnabled, externalFxHost, trackId]);
-
-  useEffect(() => {
-    void refreshFreeze();
-  }, [refreshFreeze]);
-
-  const runFreezeAction = useCallback(
-    async (action: 'freeze' | 'unfreeze'): Promise<void> => {
-      if (!externalFxHost) return;
-      const method = action === 'freeze' ? externalFxHost.freezeTrack : externalFxHost.unfreezeTrack;
-      if (typeof method !== 'function') return;
-      setFreezeBusy(action);
-      setFreezeError(null);
-      try {
-        setFreezeState(await method.call(externalFxHost, trackId));
-      } catch (e) {
-        setFreezeError(e instanceof Error ? e.message : String(e));
-        void refreshFreeze();
-      } finally {
-        setFreezeBusy(null);
-      }
-    },
-    [externalFxHost, trackId, refreshFreeze],
-  );
+  //
+  // @since SDK 2.47.0 the state normally lives in TrackRow (`freeze` prop —
+  // the row's ❄ badge and this drawer share it, and it survives the drawer
+  // unmounting on close). The internal hook remains for direct TrackDrawer
+  // users; it is inert (no host passed) whenever the prop is provided, so
+  // exactly one fetch path is live. Hooks run unconditionally.
+  const internalFreeze = useTrackFreeze(freeze ? undefined : externalFxHost, trackId);
+  const fz: UseTrackFreezeResult = freeze ?? internalFreeze;
+  const freezeEnabled = fz.enabled;
 
   const enabledTabs = useMemo((): DrawerTab[] => {
     const tabs: DrawerTab[] = [];
@@ -306,11 +281,11 @@ export function TrackDrawer({
       <div className="flex flex-col gap-2" data-testid="sdk-drawer-freeze">
         {header}
         <TrackFreezeSection
-          state={freezeState}
-          busy={freezeBusy}
-          error={freezeError}
-          onFreeze={() => void runFreezeAction('freeze')}
-          onUnfreeze={() => void runFreezeAction('unfreeze')}
+          state={fz.state}
+          busy={fz.busy}
+          error={fz.error}
+          onFreeze={() => void fz.freeze()}
+          onUnfreeze={() => void fz.unfreeze()}
         />
       </div>
     );
@@ -319,7 +294,7 @@ export function TrackDrawer({
   // ---- Frozen lock: while frozen, the sound-editing tabs yield to a notice
   // (their controls would be inaudible — the plugin chain is disabled and the
   // stem plays). The mixer strip lives OUTSIDE the drawer and stays live.
-  if (freezeState?.frozen === true) {
+  if (fz.state?.frozen === true) {
     return (
       <div className="flex flex-col gap-2" data-testid="sdk-drawer-frozen-lock">
         {header}

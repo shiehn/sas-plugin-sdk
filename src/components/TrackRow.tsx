@@ -18,6 +18,7 @@ import { TrackMeterStrip } from './TrackMeterStrip';
 import type { TrackLevelsHandle } from '../hooks/useTrackLevels';
 import type { InstrumentDescriptor, PluginHost, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
 import type { TrackRowDragProps } from '../hooks/useTrackReorder';
+import { useTrackFreeze } from '../hooks/useTrackFreeze';
 import { VolumeSlider } from './VolumeSlider';
 import { PanSlider } from './PanSlider';
 import { SorceryProgressBar } from './SorceryProgressBar';
@@ -224,6 +225,19 @@ export function TrackRow({
   // Guard the (irreversible) delete behind a confirmation modal — the bare "x"
   // was one stray click away from losing a track's MIDI + sound.
   const [confirmDelete, setConfirmDelete] = React.useState(false);
+
+  // Freeze state lives HERE (the row never unmounts while its drawer does) —
+  // shared by the ❄ badge below and the drawer's Freeze tab (@since 2.47.0).
+  // Inert on hosts without the freeze surface.
+  const freeze = useTrackFreeze(externalFxHost, track.id);
+  const freezeBadge =
+    freeze.state?.frozen === true
+      ? freeze.state.missingDeps.length > 0
+        ? ('missing' as const)
+        : freeze.state.stale
+          ? ('stale' as const)
+          : ('frozen' as const)
+      : null;
 
   // "Needs generation" = has prompt, no MIDI yet, not currently generating
   const needsGeneration = !!(prompt?.trim() && !hasMidi && !isGenerating);
@@ -438,6 +452,25 @@ export function TrackRow({
                 Shuffle
               </button>
             )}
+            {freezeBadge && (
+              <span
+                data-testid="sdk-track-freeze-badge"
+                className={`px-1 py-0.5 text-xs leading-none rounded-sm self-center ${
+                  freezeBadge === 'frozen'
+                    ? 'text-sas-accent'
+                    : 'text-amber-400'
+                }`}
+                title={
+                  freezeBadge === 'frozen'
+                    ? 'Frozen — playing the rendered stem (mixer stays live)'
+                    : freezeBadge === 'stale'
+                      ? 'Frozen (stale) — sound edited since the stem rendered; re-freeze in the drawer'
+                      : `Frozen — plugin(s) missing on this machine: ${freeze.state?.missingDeps.map((d) => d.name).join(', ')}`
+                }
+              >
+                {freezeBadge === 'frozen' ? '❄' : freezeBadge === 'stale' ? '⚠❄' : '❄!'}
+              </span>
+            )}
             {onToggleFxDrawer && (
               <button
                 data-testid="sdk-fx-button"
@@ -519,6 +552,7 @@ export function TrackRow({
             onFxPresetChange={onFxPresetChange}
             onFxDryWetChange={onFxDryWetChange}
             externalFxHost={externalFxHost}
+            freeze={freeze}
             fxDisabled={isGenerating}
             instruments={availableInstruments}
             currentPluginId={currentInstrumentPluginId ?? null}
