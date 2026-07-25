@@ -16,6 +16,8 @@ export type {
   PanelBusFxEntry,
   PanelBusLevels,
   TrackExternalFxEntry,
+  TrackFreezeState,
+  FreezeDep,
   GeneratorPlugin,
   PluginUIProps,
   PluginHost,
@@ -267,6 +269,7 @@ export { PanelMasterStrip, type PanelMasterStripProps } from './components/Panel
 export { usePanelBus, type UsePanelBusResult } from './hooks/usePanelBus';
 export { TrackExternalFxSection, type TrackExternalFxSectionProps } from './components/TrackExternalFxSection';
 export { useTrackExternalFx, type UseTrackExternalFxResult } from './hooks/useTrackExternalFx';
+export { TrackFreezeSection, type TrackFreezeSectionProps } from './components/TrackFreezeSection';
 export { PanSlider } from './components/PanSlider';
 export { FxToggleBar, type FxToggleBarProps } from './components/FxToggleBar';
 export { SorceryProgressBar, calculateTimeBasedTarget } from './components/SorceryProgressBar';

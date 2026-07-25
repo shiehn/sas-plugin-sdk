@@ -133,6 +133,40 @@ export interface PanelBusState {
 }
 
 /**
+ * One plugin a track freeze depends on (missing-deps reporting on the
+ * drawer's Freeze tab). @since SDK 2.46.0
+ */
+export interface FreezeDep {
+  /** Stable scan identity when known; null on legacy external-FX entries. */
+  identifier: string | null;
+  name: string;
+  kind: 'instrument' | 'fx';
+}
+
+/**
+ * A track's freeze state — the drawer Freeze tab's model. Frozen = the
+ * track plays a FADER-NEUTRAL stem while its sound chain is disabled;
+ * volume/pan/mute/solo stay live, and mixing never marks a freeze stale.
+ * @since SDK 2.46.0
+ */
+export interface TrackFreezeState {
+  frozen: boolean;
+  /** Only meaningful when frozen: sound inputs changed since the stem rendered. */
+  stale: boolean;
+  /** Which inputs changed ('midi' | 'preset' | 'instrument' | 'external-fx' | 'role'). */
+  staleReasons: string[];
+  /** PROVEN-missing plugins (blocks unfreeze; never populated on rumor). */
+  missingDeps: FreezeDep[];
+  /** Every plugin the active freeze recorded (empty when live). */
+  deps: FreezeDep[];
+  freezeId?: string;
+  frozenAt?: string;
+  wavPath?: string;
+  /** A fresh inactive freeze exists — re-freezing is instant. */
+  latentFreshFreeze: boolean;
+}
+
+/**
  * One third-party (VST3/AU) FX insert on a TRACK's plugin chain, as shown to
  * the panel UI. The track's instrument, the built-in FX-toggle plugins
  * (reverb/delay/eq/…) and the Volume & Pan master section are filtered OUT —
@@ -903,6 +937,31 @@ export interface PluginHost {
    * @since SDK 2.41.0
    */
   copyTrackFxFrom?(destTrackId: string, sourceTrackDbId: string): Promise<TrackFxCopyResult>;
+
+  // -------------------------------------------------------------------------
+  // Track freeze (the drawer's Freeze tab). Freezing renders the track's
+  // sound chain to a FADER-NEUTRAL stem on the SAME track and disables the
+  // plugins; volume/pan/mute/solo stay live in both states. Ownership-scoped.
+  // Everything optional — the drawer feature-gates on
+  // `typeof host.getTrackFreezeState === 'function'`. @since SDK 2.46.0
+  // -------------------------------------------------------------------------
+
+  /** The track's freeze state (frozen / stale + reasons / missing plugins). */
+  getTrackFreezeState?(trackId: string): Promise<TrackFreezeState>;
+
+  /**
+   * Freeze the track (renders take seconds — resolve = frozen). Idempotent
+   * while fresh; re-freezing a stale track re-renders. Refused for
+   * sample/audio tracks and transition scenes (message explains why).
+   */
+  freezeTrack?(trackId: string): Promise<TrackFreezeState>;
+
+  /**
+   * Unfreeze: stem out, plugin chain (incl. per-FX bypass flags) restored;
+   * the stem is kept for instant re-freeze. Refuses while the track's
+   * plugins are provably missing — the message names them and the remedy.
+   */
+  unfreezeTrack?(trackId: string): Promise<TrackFreezeState>;
 
   // --- Transport & Playback Events ---
 

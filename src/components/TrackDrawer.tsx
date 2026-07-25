@@ -18,19 +18,20 @@
  * backwards compatibility.)
  */
 
-import React, { useState, useMemo } from 'react';
-import type { InstrumentDescriptor, PluginHost, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import type { InstrumentDescriptor, PluginHost, SoundHistoryEntry, PluginMidiNote, TrackFreezeState } from '../types/plugin-sdk.types';
 import type { FxCategory, TrackFxDetailState } from '../types/fx-toggle.types';
 import { FxToggleBar } from './FxToggleBar';
 import { PianoRollEditor } from './PianoRollEditor';
 import { TrackExternalFxSection } from './TrackExternalFxSection';
+import { TrackFreezeSection } from './TrackFreezeSection';
 
 // ============================================================================
 // Tabs
 // ============================================================================
 
 /** The contextual tabs a track drawer can show, in display order. */
-export type DrawerTab = 'fx' | 'pick' | 'history' | 'import' | 'edit';
+export type DrawerTab = 'fx' | 'pick' | 'history' | 'import' | 'edit' | 'freeze';
 
 const TAB_LABELS: Record<DrawerTab, string> = {
   fx: 'FX',
@@ -38,6 +39,7 @@ const TAB_LABELS: Record<DrawerTab, string> = {
   history: 'History',
   import: 'Import',
   edit: 'Edit',
+  freeze: '❄ Freeze',
 };
 
 // ============================================================================
@@ -160,6 +162,52 @@ export function TrackDrawer({
   const historyEnabled = !!onRestoreSound;
   const importEnabled = !!onImportSound;
   const editEnabled = !!onNotesChange;
+  // Freeze tab (@since SDK 2.46.0): rides the SAME host the FX tab already
+  // receives from every panel, feature-detected — old hosts simply don't
+  // grow the tab, so panels need no changes.
+  const freezeEnabled =
+    !!externalFxHost && typeof externalFxHost.getTrackFreezeState === 'function';
+
+  // The drawer (not the section) owns freeze state: it also locks the
+  // sound-editing tabs while frozen, which must apply before the user ever
+  // opens the Freeze tab.
+  const [freezeState, setFreezeState] = useState<TrackFreezeState | null>(null);
+  const [freezeBusy, setFreezeBusy] = useState<'freeze' | 'unfreeze' | null>(null);
+  const [freezeError, setFreezeError] = useState<string | null>(null);
+
+  const refreshFreeze = useCallback(async (): Promise<void> => {
+    if (!freezeEnabled || !externalFxHost?.getTrackFreezeState) return;
+    try {
+      setFreezeState(await externalFxHost.getTrackFreezeState(trackId));
+    } catch {
+      // Non-fatal (e.g. sample/audio tracks refuse) — the tab shows a
+      // reading state and the lock stays off.
+      setFreezeState(null);
+    }
+  }, [freezeEnabled, externalFxHost, trackId]);
+
+  useEffect(() => {
+    void refreshFreeze();
+  }, [refreshFreeze]);
+
+  const runFreezeAction = useCallback(
+    async (action: 'freeze' | 'unfreeze'): Promise<void> => {
+      if (!externalFxHost) return;
+      const method = action === 'freeze' ? externalFxHost.freezeTrack : externalFxHost.unfreezeTrack;
+      if (typeof method !== 'function') return;
+      setFreezeBusy(action);
+      setFreezeError(null);
+      try {
+        setFreezeState(await method.call(externalFxHost, trackId));
+      } catch (e) {
+        setFreezeError(e instanceof Error ? e.message : String(e));
+        void refreshFreeze();
+      } finally {
+        setFreezeBusy(null);
+      }
+    },
+    [externalFxHost, trackId, refreshFreeze],
+  );
 
   const enabledTabs = useMemo((): DrawerTab[] => {
     const tabs: DrawerTab[] = [];
@@ -168,8 +216,9 @@ export function TrackDrawer({
     if (historyEnabled) tabs.push('history');
     if (importEnabled) tabs.push('import');
     if (editEnabled) tabs.push('edit');
+    if (freezeEnabled) tabs.push('freeze');
     return tabs;
-  }, [fxEnabled, pickEnabled, historyEnabled, importEnabled, editEnabled]);
+  }, [fxEnabled, pickEnabled, historyEnabled, importEnabled, editEnabled, freezeEnabled]);
 
   /** Sentinel pluginId for the default Surge XT entry */
   const SURGE_XT_DEFAULT_ID = 'Surge XT';
@@ -250,6 +299,45 @@ export function TrackDrawer({
         )}
       </div>
     ) : null;
+
+  // ---- Freeze tab (@since SDK 2.46.0) ----
+  if (effectiveTab === 'freeze') {
+    return (
+      <div className="flex flex-col gap-2" data-testid="sdk-drawer-freeze">
+        {header}
+        <TrackFreezeSection
+          state={freezeState}
+          busy={freezeBusy}
+          error={freezeError}
+          onFreeze={() => void runFreezeAction('freeze')}
+          onUnfreeze={() => void runFreezeAction('unfreeze')}
+        />
+      </div>
+    );
+  }
+
+  // ---- Frozen lock: while frozen, the sound-editing tabs yield to a notice
+  // (their controls would be inaudible — the plugin chain is disabled and the
+  // stem plays). The mixer strip lives OUTSIDE the drawer and stays live.
+  if (freezeState?.frozen === true) {
+    return (
+      <div className="flex flex-col gap-2" data-testid="sdk-drawer-frozen-lock">
+        {header}
+        <div className="text-[11px] text-sas-muted/80 leading-snug rounded-sm border border-sas-border bg-sas-panel-alt px-2 py-2">
+          ❄ This track is frozen — it plays its rendered stem, so sound editing here would be
+          inaudible. Volume, pan, mute and solo stay live.
+        </div>
+        <button
+          type="button"
+          data-testid="sdk-drawer-frozen-goto"
+          onClick={() => onTabChange?.('freeze')}
+          className="w-full py-2 text-xs font-medium rounded-sm border border-sas-accent bg-sas-accent/20 text-sas-accent hover:bg-sas-accent/40 transition-colors"
+        >
+          Open the Freeze tab to unfreeze
+        </button>
+      </div>
+    );
+  }
 
   // ---- Edit tab (piano-roll MIDI editor) ----
   if (effectiveTab === 'edit') {
