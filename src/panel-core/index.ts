@@ -52,6 +52,7 @@ export type {
   PanelGroupExtension,
   GeneratorPanelAdapter,
   GeneratorPanelSlots,
+  TrackCreatedContext,
   VerbatimFadeMember,
   PanelTransitionGroupAdapter,
 } from './adapter.types';

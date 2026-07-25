@@ -1232,6 +1232,34 @@ export interface PluginHost {
    */
   onAllDecksStopped(listener: () => void): UnsubscribeFn;
 
+  // --- Surge XT availability (panel prerequisite gates) ---
+
+  /**
+   * Surge XT availability snapshot — the synth behind synth-layer tracks.
+   * Panels that REQUIRE Surge (e.g. the livecode "Code" panel) gate their UI
+   * on this and offer install. Optional — feature-check before calling.
+   *
+   * @since SDK 2.45.0
+   */
+  getSurgeXtStatus?(): Promise<SurgeXtStatus>;
+
+  /**
+   * Kick the bundled Surge XT installer (same flow as the setup wizard /
+   * connection panel). Resolves when the install attempt finishes; progress
+   * streams via {@link onSurgeXtStatus}.
+   *
+   * @since SDK 2.45.0
+   */
+  installSurgeXt?(): Promise<{ success: boolean; error?: string }>;
+
+  /**
+   * Subscribe to Surge XT status/progress changes (install started, progress
+   * lines, completion). Returns an unsubscribe fn.
+   *
+   * @since SDK 2.45.0
+   */
+  onSurgeXtStatus?(listener: (status: SurgeXtStatus) => void): UnsubscribeFn;
+
   // --- Scoped Data API ---
 
   /** Get a value from scene-scoped plugin data. */
@@ -2110,6 +2138,19 @@ export interface TransportEvent {
   bpm?: number;
   position?: number;       // in seconds
   isPlaying?: boolean;
+}
+
+/**
+ * Surge XT availability snapshot for panel prerequisite gates.
+ * @since SDK 2.45.0
+ */
+export interface SurgeXtStatus {
+  /** Surge XT is installed on this machine. */
+  installed: boolean;
+  /** An install kicked off via installSurgeXt (or the setup flow) is running. */
+  installing: boolean;
+  /** Human-readable progress line while installing. */
+  progressMessage?: string;
 }
 
 export interface DeckBoundaryEvent {

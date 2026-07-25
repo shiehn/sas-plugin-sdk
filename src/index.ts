@@ -74,6 +74,7 @@ export type {
   PluginPresetData,
   ShufflePresetOptions,
   ShufflePresetResult,
+  SurgeXtStatus,
   SoundHistoryEntry,
   PluginSettingsSchema,
   SettingDefinition,
