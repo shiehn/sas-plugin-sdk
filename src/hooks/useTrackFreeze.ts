@@ -43,6 +43,18 @@ export function useTrackFreeze(host: PluginHost | undefined, trackId: string): U
     void refresh();
   }, [refresh]);
 
+  // Scene-level and Freeze-All batches change freeze state OUTSIDE this
+  // row — the workstation dispatches 'sas:freeze-changed' when a batch
+  // completes so every mounted badge/tab refetches (@since SDK 2.47.1).
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const onFreezeChanged = (): void => {
+      void refresh();
+    };
+    window.addEventListener('sas:freeze-changed', onFreezeChanged);
+    return () => window.removeEventListener('sas:freeze-changed', onFreezeChanged);
+  }, [enabled, refresh]);
+
   const run = useCallback(
     async (action: 'freeze' | 'unfreeze'): Promise<void> => {
       if (!host) return;
