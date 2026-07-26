@@ -141,6 +141,15 @@ export interface SDKTrackRowProps {
    * a title suffix. Undefined (all single-track panels) renders nothing.
    */
   linkedSoundHint?: string;
+  /**
+   * One-shot linked sync (@since SDK 2.48.0): presence renders a "→ All"
+   * button next to Shuffle that pushes THIS row's current sound to every
+   * linked sibling. The affordance for patch changes made inside a custom
+   * plugin's own editor (Kontakt / Diva…), which fire no change event —
+   * and the only sound-propagation control that works on such tracks,
+   * since Shuffle is Surge-only.
+   */
+  onSyncSoundToGroup?: () => void;
   // --- Edit tab (piano-roll MIDI editor) ---
   /** Current MIDI notes for the piano-roll editor (the 'edit' tab). */
   editNotes?: readonly PluginMidiNote[];
@@ -218,6 +227,7 @@ export function TrackRow({
   onImportSound,
   importSoundLabel,
   linkedSoundHint,
+  onSyncSoundToGroup,
   editNotes,
   onNotesChange,
   editBars,
@@ -468,6 +478,21 @@ export function TrackRow({
                     🔗
                   </span>
                 )}
+              </button>
+            )}
+            {onSyncSoundToGroup && (
+              <button
+                data-testid="sdk-sync-sound-button"
+                onClick={onSyncSoundToGroup}
+                disabled={isGenerating}
+                className={`px-1.5 py-0.5 rounded-sm text-xs font-medium transition-colors border whitespace-nowrap ${
+                  isGenerating
+                    ? 'bg-sas-panel border-sas-border text-sas-muted/30 cursor-not-allowed'
+                    : 'bg-sas-panel-alt border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent'
+                }`}
+                title="Apply THIS part's current sound to all linked parts — use after picking a patch inside the plugin's own editor"
+              >
+                → All
               </button>
             )}
             {freezeBadge && (

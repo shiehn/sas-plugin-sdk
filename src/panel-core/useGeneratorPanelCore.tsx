@@ -143,6 +143,12 @@ export interface GeneratorPanelCore {
    * soundHistory.restoreTo for panels without broadcastTargets.
    */
   handleRestoreSound(trackId: string, index: number): Promise<void>;
+  /**
+   * One-shot linked sync (@since SDK 2.48.0): capture the track's CURRENT
+   * sound and broadcast it to its linked siblings — for edits made inside a
+   * plugin's own editor, which fire no change event.
+   */
+  handleSyncSoundToGroup(trackId: string): Promise<void>;
   handleAddTrack(): Promise<void>;
   handleDeleteTrack(trackId: string): Promise<void>;
   handleExportMidi(): Promise<void>;
@@ -1133,6 +1139,36 @@ export function useGeneratorPanelCore({
     [adapter, makeServices, host, logTag],
   );
 
+  // One-shot "apply THIS part's current sound to all parts" (@since SDK
+  // 2.48.0): the escape hatch for sound changes the host cannot observe —
+  // a patch loaded inside a third-party plugin's own editor (Kontakt, Serum)
+  // fires no change event, so the automatic linked broadcast never runs.
+  // Captures the row's LIVE state (raw for custom instruments) and pushes it
+  // through the normal broadcast (same-instrument siblings only).
+  const handleSyncSoundToGroup = useCallback(
+    async (trackId: string): Promise<void> => {
+      const track = tracksRef.current.find((t) => t.handle.id === trackId);
+      if (!track) return;
+      let cap: { descriptor: unknown } | null = null;
+      try {
+        cap = await adapter.sound.captureSoundDescriptor(trackId);
+      } catch {
+        cap = null;
+      }
+      if (!cap) {
+        host.showToast('warning', 'Nothing to sync', 'This track has no sound to copy yet.');
+        return;
+      }
+      const hist = soundHistory.list(trackId);
+      const label =
+        (hist.cursor >= 0 ? hist.entries[hist.cursor]?.label : undefined) ??
+        track.instrumentName ??
+        'Current sound';
+      await broadcastSoundFromTrack(trackId, cap.descriptor, label);
+    },
+    [adapter, soundHistory, host, broadcastSoundFromTrack],
+  );
+
   // Restore wrapper (the shell's onRestoreSound): restoreTo + linked broadcast.
   // The entry is read BEFORE the cursor moves so the broadcast has its
   // descriptor + label; a no-op restore (same index / OOB) never broadcasts.
@@ -1775,6 +1811,9 @@ export function useGeneratorPanelCore({
       shuffle: (trackId: string) => {
         void handleShuffle(trackId);
       },
+      syncSoundToGroup: (trackId: string) => {
+        void handleSyncSoundToGroup(trackId);
+      },
       copy: (trackId: string) => {
         void handleCopy(trackId);
       },
@@ -1795,6 +1834,7 @@ export function useGeneratorPanelCore({
       handlePromptChange,
       handleGenerate,
       handleShuffle,
+      handleSyncSoundToGroup,
       handleCopy,
       handleDeleteTrack,
       handleMuteToggle,
@@ -1854,6 +1894,7 @@ export function useGeneratorPanelCore({
     handleGenerate,
     handleShuffle,
     handleRestoreSound,
+    handleSyncSoundToGroup,
     handleAddTrack,
     handleDeleteTrack,
     handleExportMidi,

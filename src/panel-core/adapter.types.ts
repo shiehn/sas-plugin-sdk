@@ -231,6 +231,12 @@ export interface CoreTrackHandlers {
   promptChange(trackId: string, prompt: string): void;
   generate(trackId: string): void;
   shuffle(trackId: string): void;
+  /**
+   * One-shot linked sync (@since SDK 2.48.0): broadcast the track's CURRENT
+   * sound to its linked siblings — the affordance for patch changes made
+   * inside a plugin's own editor (no change event to hook).
+   */
+  syncSoundToGroup(trackId: string): void;
   copy(trackId: string): void;
   delete(trackId: string): void;
   muteToggle(trackId: string): void;
