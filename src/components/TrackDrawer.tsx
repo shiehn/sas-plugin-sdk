@@ -111,6 +111,13 @@ export interface TrackDrawerProps {
   /** Button label, e.g. "Import Sample" (drums/instruments) or "Import Preset" (synths). */
   importSoundLabel?: string;
 
+  /**
+   * Linked-group hint (@since SDK 2.48.0): shown in the drawer header on
+   * every tab, e.g. "🔗 Sound changes apply to all 4 parts". Undefined
+   * renders nothing (all single-track panels).
+   */
+  linkedSoundHint?: string;
+
   // --- Edit tab (enabled when onNotesChange is provided) ---
   /** Current MIDI notes for the piano-roll editor. */
   editNotes?: readonly PluginMidiNote[];
@@ -156,6 +163,7 @@ export function TrackDrawer({
   onToggleFavorite,
   onImportSound,
   importSoundLabel,
+  linkedSoundHint,
   editNotes,
   onNotesChange,
   editBars,
@@ -261,7 +269,7 @@ export function TrackDrawer({
       : null;
 
   const header =
-    strip || currentSound ? (
+    strip || currentSound || linkedSoundHint ? (
       <div className="flex flex-col gap-1" data-testid="sdk-drawer-header">
         {strip}
         {currentSound && (
@@ -270,6 +278,14 @@ export function TrackDrawer({
             title={currentSound}
           >
             {currentSound}
+          </span>
+        )}
+        {linkedSoundHint && (
+          <span
+            data-testid="sdk-drawer-linked-hint"
+            className="text-[10px] text-sas-accent/80 px-0.5"
+          >
+            {linkedSoundHint}
           </span>
         )}
       </div>

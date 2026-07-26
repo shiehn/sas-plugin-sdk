@@ -133,6 +133,29 @@ export interface PanelSoundAdapter {
   importNoun: string;
   /** History label for the lazily-seeded pre-shuffle sound, e.g. 'Previous preset'. */
   previousSoundLabel: string;
+  /**
+   * Linked-sound groups (@since SDK 2.48.0): the sibling tracks a sound
+   * change on `track` should also apply to, or null/[] when the track is not
+   * in a linked group (or the group's link toggle is OFF). Return ALL linked
+   * members — the core filters: the source track is always dropped, and
+   * preset-level broadcasts (shuffle / history-restore / sound-import) skip
+   * siblings whose instrument differs from the source's (a Surge blob must
+   * not land on Kontakt). Pick-tab instrument swaps broadcast to every
+   * sibling unfiltered — that is what converges a mixed group.
+   */
+  broadcastTargets?(
+    track: GeneratorTrackState,
+    services: GenerationServices,
+  ): Promise<Array<{ engineId: string; dbId: string; label?: string }> | null>;
+  /**
+   * Persist a descriptor as the track's DURABLE sound identity WITHOUT
+   * re-applying it (the descriptor-space half of copySnapshot). The linked
+   * broadcast calls it per target — and on the source after restore/import,
+   * which apply live-only — so getTrackSound / transitions / agent tools
+   * read the truth. Best-effort; families without a durable store omit it.
+   * @since SDK 2.48.0
+   */
+  persistDescriptor?(trackId: string, descriptor: unknown, label: string): Promise<void>;
 }
 
 /** The 🎲: pick + apply one new sound, honoring the exclusion cycle. */
@@ -179,6 +202,12 @@ export interface GenerationServices {
   createFamilyTrack(nameSuffix?: string): Promise<PluginTrackHandle>;
   /** Resolved groups for a registered group extension. */
   resolvedGroups<M>(metaKey: string): ResolvedTrackGroup<M, GeneratorTrackState>[];
+  /**
+   * The family sound adapter. Always present when built by the core's
+   * makeServices; optional only for pre-2.48 hand-built test services.
+   * @since SDK 2.48.0
+   */
+  sound?: PanelSoundAdapter;
 }
 
 /**
@@ -243,6 +272,15 @@ export interface GroupRenderContext {
     members: Array<{ engineId: string; dbId: string }>,
     cleanupKeySuffixes: string[],
   ): Promise<void>;
+  /**
+   * Whether this group is visually collapsed (@since SDK 2.48.0). The shell
+   * owns the state and persists it per group in scene-data
+   * (`track:<groupId>:groupUi`); renderGroup wraps its member rows in
+   * `{!ctx.collapsed && …}` and renders a GroupCollapseChevron in its header.
+   */
+  collapsed?: boolean;
+  /** Toggle this group's collapsed state (persisted). @since SDK 2.48.0 */
+  onToggleCollapse?: () => void;
 }
 
 /**

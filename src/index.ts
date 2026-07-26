@@ -238,6 +238,10 @@ export {
   type AudioEffect,
 } from './transition-designer-meta';
 export { ConfirmDialog, type ConfirmDialogProps } from './components/ConfirmDialog';
+export {
+  GroupCollapseChevron,
+  type GroupCollapseChevronProps,
+} from './components/GroupCollapseChevron';
 export { Modal, type ModalProps } from './components/Modal';
 export {
   TrackDrawer,

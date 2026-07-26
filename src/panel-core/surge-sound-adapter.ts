@@ -84,6 +84,20 @@ export function createSurgeSoundAdapter(
         .catch(() => {});
       return snap.label;
     },
+    persistDescriptor: async (trackId: string, descriptor: unknown, label: string) => {
+      const { state, stateType } = descriptor as { state: string; stateType?: 'raw' | 'valuetree' };
+      // Same durable-identity write copySnapshot does, in descriptor space —
+      // the linked-sound broadcast persists what it applies so getTrackSound
+      // (generation inherit, transitions, agent tools) reads the truth.
+      // Absent stateType ⇒ ValueTree (same fallback applySound uses).
+      await host
+        .persistTrackPresetState?.(trackId, {
+          state,
+          stateType: stateType ?? 'valuetree',
+          name: label,
+        })
+        .catch(() => {});
+    },
     descriptorFromSnapshot: (snap: TrackSoundSnapshot) => {
       const preset = snap as Extract<TrackSoundSnapshot, { kind: 'preset' }>;
       return { state: preset.state, stateType: preset.stateType };

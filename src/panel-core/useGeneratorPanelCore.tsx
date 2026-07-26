@@ -137,6 +137,12 @@ export interface GeneratorPanelCore {
   handlers: CoreTrackHandlers;
   handleGenerate(trackId: string): Promise<void>;
   handleShuffle(trackId: string): Promise<void>;
+  /**
+   * History-tab restore + linked-group broadcast (@since SDK 2.48.0) — the
+   * shell wires this as every row's onRestoreSound. Identical to
+   * soundHistory.restoreTo for panels without broadcastTargets.
+   */
+  handleRestoreSound(trackId: string, index: number): Promise<void>;
   handleAddTrack(): Promise<void>;
   handleDeleteTrack(trackId: string): Promise<void>;
   handleExportMidi(): Promise<void>;
@@ -686,38 +692,10 @@ export function useGeneratorPanelCore({
     [host, adapter, identity, activeSceneId, isConnected, tracks.length, loadTracks],
   );
 
-  // --- Sound import (drawer "Import <noun>") ------------------------------
-  const handleSoundImportPick = useCallback(
-    async (sel: { sourceTrackDbId: string; trackName: string; sceneName: string }): Promise<void> => {
-      const target = soundImportTarget;
-      if (!target || !host.getTrackSound) {
-        setSoundImportTarget(null);
-        return;
-      }
-      const noun = adapter.sound.importNoun;
-      const nounTitle = noun.charAt(0).toUpperCase() + noun.slice(1);
-      try {
-        const snap = await host.getTrackSound(sel.sourceTrackDbId);
-        if (!snap || snap.kind !== adapter.sound.acceptedSnapshotKind) {
-          host.showToast(
-            'error',
-            `No ${noun} to import`,
-            `${sel.trackName} has no ${identity.familyKey} ${noun}.`,
-          );
-          return;
-        }
-        const descriptor = adapter.sound.descriptorFromSnapshot(snap);
-        await adapter.sound.applySound(target.handle.id, descriptor);
-        soundHistory.record(target.handle.id, descriptor, snap.label);
-        host.showToast('success', `${nounTitle} imported`, `${snap.label} → ${target.handle.name}`);
-      } catch (err: unknown) {
-        host.showToast('error', 'Import failed', err instanceof Error ? err.message : String(err));
-      } finally {
-        setSoundImportTarget(null);
-      }
-    },
-    [soundImportTarget, host, adapter, identity.familyKey, soundHistory],
-  );
+  // NOTE: handleSoundImportPick lives BELOW makeServices — it broadcasts to
+  // linked siblings via broadcastSoundFromTrack, whose deps include
+  // makeServices (defining it here would read the binding before
+  // initialization at render time).
 
   // --- Export tracks as MIDI bundle -------------------------------------
   const [isExportingMidi, setIsExportingMidi] = useState(false);
@@ -1010,8 +988,199 @@ export function useGeneratorPanelCore({
           M,
           GeneratorTrackState
         >[],
+      sound: adapter.sound,
     };
   }, [host, activeSceneId, updateTrack, loadTracks, soundHistory, engineToDbId, markEditLoaded, identity, adapter]);
+
+  // --- Linked-sound broadcast (@since SDK 2.48.0) --------------------------
+  // After a successful preset-level change (shuffle / restore / import) on a
+  // track whose family declares broadcastTargets, apply the SAME descriptor
+  // to every linked sibling: lazy-seed its history, apply, persist durable
+  // identity, record. Serial; per-target try/catch (a frozen sibling with
+  // missing plugins REFUSES via the host's freeze gate — warn + continue).
+  const broadcastSoundFromTrack = useCallback(
+    async (sourceTrackId: string, descriptor: unknown, label: string): Promise<void> => {
+      const targetsOf = adapter.sound.broadcastTargets;
+      if (!targetsOf) return;
+      const source = tracksRef.current.find((t) => t.handle.id === sourceTrackId);
+      if (!source) return;
+      let targets: Array<{ engineId: string; dbId: string; label?: string }> | null;
+      try {
+        targets = await targetsOf(source, makeServices());
+      } catch (err: unknown) {
+        console.warn(`[${logTag}] broadcastTargets failed:`, err);
+        return;
+      }
+      // Preset blobs only make sense on the SAME instrument the source has
+      // (Surge ValueTree ↛ Kontakt; raw VST3 state ↛ a different plugin).
+      // Siblings on a different instrument are skipped here — the instrument
+      // broadcast below is what converges them.
+      const sourceInstrument = source.instrumentPluginId ?? null;
+      const others = (targets ?? []).filter((t) => {
+        if (t.engineId === sourceTrackId) return false;
+        const live = tracksRef.current.find((x) => x.handle.id === t.engineId);
+        return (live?.instrumentPluginId ?? null) === sourceInstrument;
+      });
+      if (others.length === 0) return;
+      // The SOURCE's durable identity too: restore/import apply live-only, so
+      // the group's shared identity (getTrackSound) would read stale without
+      // this. Idempotent after a shuffle (the host already persisted).
+      try {
+        await adapter.sound.persistDescriptor?.(sourceTrackId, descriptor, label);
+      } catch {
+        /* non-fatal */
+      }
+      const appliedIds = new Set<string>();
+      const failed: string[] = [];
+      for (const target of others) {
+        try {
+          if (soundHistory.list(target.engineId).entries.length === 0) {
+            try {
+              const cap = await adapter.sound.captureSoundDescriptor(target.engineId);
+              if (cap) {
+                soundHistory.record(target.engineId, cap.descriptor, adapter.sound.previousSoundLabel);
+              }
+            } catch {
+              /* history just won't include the pre-change sound */
+            }
+          }
+          await adapter.sound.applySound(target.engineId, descriptor);
+          try {
+            await adapter.sound.persistDescriptor?.(target.engineId, descriptor, label);
+          } catch {
+            /* non-fatal */
+          }
+          soundHistory.record(target.engineId, descriptor, label);
+          appliedIds.add(target.engineId);
+        } catch (err: unknown) {
+          failed.push(target.label ?? target.engineId);
+          console.warn(`[${logTag}] Linked sound apply failed for ${target.engineId}:`, err);
+        }
+      }
+      // Shuffle-cycle coherence: these siblings now HAVE this sound — exclude
+      // it from their own future shuffles this session.
+      if (appliedIds.size > 0) {
+        setTracks((prev) =>
+          prev.map((t) =>
+            appliedIds.has(t.handle.id)
+              ? { ...t, shuffleHistory: new Set([...t.shuffleHistory, label]) }
+              : t,
+          ),
+        );
+      }
+      if (failed.length > 0) {
+        host.showToast(
+          'warning',
+          'Linked sound applied to some parts only',
+          `Skipped: ${failed.join(', ')}`,
+        );
+      }
+    },
+    [adapter, makeServices, soundHistory, host, logTag],
+  );
+
+  // Instrument twin of the sound broadcast (@since SDK 2.48.0): a Pick-tab
+  // instrument swap on a linked track loads the SAME plugin on every sibling
+  // ("set the sound once" covers the instrument itself, not just Surge
+  // patches). Siblings get the plugin's default state — later tweaks inside
+  // the plugin's own editor have no change event and stay per-part. Only the
+  // SOURCE row enters the editor stage.
+  const broadcastInstrumentFromTrack = useCallback(
+    async (sourceTrackId: string, pluginId: string): Promise<void> => {
+      const targetsOf = adapter.sound.broadcastTargets;
+      if (!targetsOf) return;
+      const source = tracksRef.current.find((t) => t.handle.id === sourceTrackId);
+      if (!source) return;
+      let targets: Array<{ engineId: string; dbId: string; label?: string }> | null;
+      try {
+        targets = await targetsOf(source, makeServices());
+      } catch (err: unknown) {
+        console.warn(`[${logTag}] broadcastTargets failed:`, err);
+        return;
+      }
+      const others = (targets ?? []).filter((t) => t.engineId !== sourceTrackId);
+      if (others.length === 0) return;
+      const failed: string[] = [];
+      for (const target of others) {
+        try {
+          await host.setTrackInstrument(target.engineId, pluginId);
+          const descriptor = await host.getTrackInstrument(target.engineId);
+          setTracks((prev) =>
+            prev.map((t) =>
+              t.handle.id === target.engineId
+                ? {
+                    ...t,
+                    instrumentPluginId: descriptor?.pluginId ?? null,
+                    instrumentName: descriptor?.name ?? null,
+                    instrumentMissing: descriptor?.missing ?? false,
+                  }
+                : t,
+            ),
+          );
+        } catch (err: unknown) {
+          failed.push(target.label ?? target.engineId);
+          console.warn(`[${logTag}] Linked instrument apply failed for ${target.engineId}:`, err);
+        }
+      }
+      if (failed.length > 0) {
+        host.showToast(
+          'warning',
+          'Instrument applied to some parts only',
+          `Skipped: ${failed.join(', ')}`,
+        );
+      }
+    },
+    [adapter, makeServices, host, logTag],
+  );
+
+  // Restore wrapper (the shell's onRestoreSound): restoreTo + linked broadcast.
+  // The entry is read BEFORE the cursor moves so the broadcast has its
+  // descriptor + label; a no-op restore (same index / OOB) never broadcasts.
+  const handleRestoreSound = useCallback(
+    async (trackId: string, index: number): Promise<void> => {
+      const entry = soundHistory.list(trackId).entries[index];
+      const moved = await soundHistory.restoreTo(trackId, index);
+      if (moved && entry) {
+        await broadcastSoundFromTrack(trackId, entry.descriptor, entry.label);
+      }
+    },
+    [soundHistory, broadcastSoundFromTrack],
+  );
+
+  // --- Sound import (drawer "Import <noun>") ------------------------------
+  const handleSoundImportPick = useCallback(
+    async (sel: { sourceTrackDbId: string; trackName: string; sceneName: string }): Promise<void> => {
+      const target = soundImportTarget;
+      if (!target || !host.getTrackSound) {
+        setSoundImportTarget(null);
+        return;
+      }
+      const noun = adapter.sound.importNoun;
+      const nounTitle = noun.charAt(0).toUpperCase() + noun.slice(1);
+      try {
+        const snap = await host.getTrackSound(sel.sourceTrackDbId);
+        if (!snap || snap.kind !== adapter.sound.acceptedSnapshotKind) {
+          host.showToast(
+            'error',
+            `No ${noun} to import`,
+            `${sel.trackName} has no ${identity.familyKey} ${noun}.`,
+          );
+          return;
+        }
+        const descriptor = adapter.sound.descriptorFromSnapshot(snap);
+        await adapter.sound.applySound(target.handle.id, descriptor);
+        soundHistory.record(target.handle.id, descriptor, snap.label);
+        host.showToast('success', `${nounTitle} imported`, `${snap.label} → ${target.handle.name}`);
+        // Linked groups: land the imported sound on every sibling too.
+        await broadcastSoundFromTrack(target.handle.id, descriptor, snap.label);
+      } catch (err: unknown) {
+        host.showToast('error', 'Import failed', err instanceof Error ? err.message : String(err));
+      } finally {
+        setSoundImportTarget(null);
+      }
+    },
+    [soundImportTarget, host, adapter, identity.familyKey, soundHistory, broadcastSoundFromTrack],
+  );
 
   // --- Generate (core wrapper; adapter strategy owns the body) ------------
   const handleGenerate = useCallback(
@@ -1148,7 +1317,11 @@ export function useGeneratorPanelCore({
         // Record the new sound so the History tab can return to it.
         try {
           const cap = await adapter.sound.captureSoundDescriptor(trackId);
-          if (cap) soundHistory.record(trackId, cap.descriptor, result.appliedName);
+          if (cap) {
+            soundHistory.record(trackId, cap.descriptor, result.appliedName);
+            // Linked groups: land the exact same sound on every sibling.
+            await broadcastSoundFromTrack(trackId, cap.descriptor, result.appliedName);
+          }
         } catch {
           // Non-fatal.
         }
@@ -1158,7 +1331,7 @@ export function useGeneratorPanelCore({
         host.showToast('error', 'Shuffle failed', msg);
       }
     },
-    [host, adapter, tracks, soundHistory, logTag],
+    [host, adapter, tracks, soundHistory, logTag, broadcastSoundFromTrack],
   );
 
   // --- Duplicate track (copy MIDI, new sound) -----------------------------
@@ -1407,6 +1580,8 @@ export function useGeneratorPanelCore({
                 : t,
             ),
           );
+          // Linked groups converge on the default too.
+          await broadcastInstrumentFromTrack(trackId, pluginId);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : 'Failed to load instrument';
           host.showToast('error', 'Instrument load failed', msg);
@@ -1434,6 +1609,9 @@ export function useGeneratorPanelCore({
               : t,
           ),
         );
+        // Linked groups: load the same instrument on every sibling (only the
+        // source row enters the editor stage).
+        await broadcastInstrumentFromTrack(trackId, pluginId);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Failed to load instrument';
         console.error(`[${logTag}] Failed to set instrument:`, err);
@@ -1444,7 +1622,7 @@ export function useGeneratorPanelCore({
         );
       }
     },
-    [host, identity.defaultInstrumentPluginId, logTag],
+    [host, identity.defaultInstrumentPluginId, logTag, broadcastInstrumentFromTrack],
   );
 
   const handleShowEditor = useCallback(
@@ -1675,6 +1853,7 @@ export function useGeneratorPanelCore({
     handlers,
     handleGenerate,
     handleShuffle,
+    handleRestoreSound,
     handleAddTrack,
     handleDeleteTrack,
     handleExportMidi,

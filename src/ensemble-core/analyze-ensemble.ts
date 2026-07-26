@@ -131,6 +131,8 @@ export function describeViolations(
     forbidParallelPerfects: boolean;
     forbidVoiceCrossing: boolean;
     minOnsetIndependence: number;
+    /** Section styles: independence ABOVE this is the violation (see styles.ts). */
+    maxOnsetIndependence?: number;
   }
 ): string[] {
   const out: string[] = [];
@@ -146,6 +148,9 @@ export function describeViolations(
     }
     if (pair.onsetIndependence < rules.minOnsetIndependence) {
       out.push(`Voices ${pair.upperVoice + 1} and ${pair.upperVoice + 2} attack together too often (independence ${pair.onsetIndependence.toFixed(2)} < ${rules.minOnsetIndependence}) — stagger entrances and let one voice move while the other holds.`);
+    }
+    if (rules.maxOnsetIndependence !== undefined && pair.onsetIndependence > rules.maxOnsetIndependence) {
+      out.push(`Voices ${pair.upperVoice + 1} and ${pair.upperVoice + 2} don't attack together enough (independence ${pair.onsetIndependence.toFixed(2)} > ${rules.maxOnsetIndependence}) — this is a section: give every voice the SAME rhythm as the lead so the hits land as one.`);
     }
   }
   return out;

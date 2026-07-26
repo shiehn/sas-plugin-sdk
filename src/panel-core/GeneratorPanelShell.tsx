@@ -12,7 +12,7 @@
  * @since SDK 2.35.0
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { BulkAddPlaceholderTrack } from '../types/plugin-sdk.types';
 import type { FxCategory } from '../types/fx-toggle.types';
@@ -29,7 +29,60 @@ import type { CrossfadeSlot } from '../crossfade-meta';
 import type { TrackRowDragProps } from '../hooks/useTrackReorder';
 import type { GeneratorTrackState } from './track-state';
 import type { GeneratorPanelCore } from './useGeneratorPanelCore';
-import type { GeneratorPanelSlots, GroupRenderContext } from './adapter.types';
+import type { GeneratorPanelSlots, GroupRenderContext, PanelGroupExtension } from './adapter.types';
+import type { ResolvedTrackGroup } from './group-meta';
+
+/** Scene-data suffix holding a group's UI state (`track:<groupId>:groupUi`). */
+const GROUP_UI_KEY = 'groupUi';
+
+/**
+ * Per-group collapse wrapper (@since SDK 2.48.0): owns the group's collapsed
+ * flag, hydrates it once from scene-data (`track:<groupId>:groupUi`, groupId =
+ * the anchor's dbId in every voice-group plugin), persists on toggle
+ * (fire-and-forget), and hands the group renderer a per-group ctx with
+ * `collapsed` + `onToggleCollapse`. Persistence lives HERE — once for all
+ * group plugins — so families without their own config channel get it free.
+ */
+function CollapsibleGroup({
+  ext,
+  group,
+  groupCtx,
+}: {
+  ext: PanelGroupExtension<unknown>;
+  group: ResolvedTrackGroup<unknown, GeneratorTrackState>;
+  groupCtx: GroupRenderContext;
+}): React.ReactElement {
+  const { host, activeSceneId, trackDataKey } = groupCtx.services;
+  const uiKey = trackDataKey(group.groupId, GROUP_UI_KEY);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeSceneId) return undefined;
+    void host
+      .getSceneData(activeSceneId, uiKey)
+      .then((raw) => {
+        if (cancelled || !raw || typeof raw !== 'object') return;
+        setCollapsed((raw as { collapsed?: unknown }).collapsed === true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [host, activeSceneId, uiKey]);
+
+  const onToggleCollapse = useCallback((): void => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      if (activeSceneId) {
+        void host.setSceneData(activeSceneId, uiKey, { collapsed: next }).catch(() => {});
+      }
+      return next;
+    });
+  }, [host, activeSceneId, uiKey]);
+
+  return <>{ext.renderGroup(group, { ...groupCtx, collapsed, onToggleCollapse })}</>;
+}
 
 export interface GeneratorPanelShellProps {
   core: GeneratorPanelCore;
@@ -58,6 +111,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
     soundImportTarget,
     setSoundImportTarget,
     handleSoundImportPick,
+    handleRestoreSound,
     handlePortTrack,
     transition,
     crossfadePairsMeta,
@@ -164,7 +218,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
         soundHistory: soundHistory.list(id).entries,
         soundHistoryCursor: soundHistory.list(id).cursor,
         onRestoreSound: (i: number) => {
-          void soundHistory.restoreTo(id, i);
+          void handleRestoreSound(id, i);
         },
         onToggleFavorite: (i: number) => soundHistory.toggleFavorite(id, i),
         ...importSoundProps,
@@ -195,6 +249,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
       handleBackToInstruments,
       setSoundImportTarget,
       soundHistory,
+      handleRestoreSound,
       handleFxToggle,
       handleFxPresetChange,
       handleFxDryWetChange,
@@ -499,9 +554,12 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
                 // the fade metas degrades back to a normal family group row.
                 .filter((group) => !group.members.every((m) => fadeMemberDbIds.has(m.dbId)))
                 .map((group) => (
-                  <React.Fragment key={`${ext.metaKey}:${group.groupId}`}>
-                    {ext.renderGroup(group, groupCtx)}
-                  </React.Fragment>
+                  <CollapsibleGroup
+                    key={`${ext.metaKey}:${group.groupId}`}
+                    ext={ext}
+                    group={group}
+                    groupCtx={groupCtx}
+                  />
                 )),
             )}
             {tracks.map((track: GeneratorTrackState, index: number) => {

@@ -135,6 +135,12 @@ export interface SDKTrackRowProps {
   onImportSound?: () => void;
   /** Sound-import button label ("Import Sample" / "Import Preset"). */
   importSoundLabel?: string;
+  /**
+   * Linked-group hint (@since SDK 2.48.0): when set, the drawer shows this
+   * info line on every tab and the Shuffle button gains a small 🔗 marker +
+   * a title suffix. Undefined (all single-track panels) renders nothing.
+   */
+  linkedSoundHint?: string;
   // --- Edit tab (piano-roll MIDI editor) ---
   /** Current MIDI notes for the piano-roll editor (the 'edit' tab). */
   editNotes?: readonly PluginMidiNote[];
@@ -211,6 +217,7 @@ export function TrackRow({
   onToggleFavorite,
   onImportSound,
   importSoundLabel,
+  linkedSoundHint,
   editNotes,
   onNotesChange,
   editBars,
@@ -436,7 +443,7 @@ export function TrackRow({
                 data-testid="sdk-shuffle-button"
                 onClick={onShuffle}
                 disabled={!hasMidi || isGenerating || !!currentInstrumentPluginId}
-                className={`w-14 py-0.5 rounded-sm text-xs font-medium transition-colors border ${
+                className={`relative w-14 py-0.5 rounded-sm text-xs font-medium transition-colors border ${
                   !hasMidi || isGenerating || !!currentInstrumentPluginId
                     ? 'bg-sas-panel border-sas-border text-sas-muted/30 cursor-not-allowed'
                     : 'bg-sas-panel-alt border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent'
@@ -445,11 +452,22 @@ export function TrackRow({
                   currentInstrumentPluginId
                     ? 'Shuffle only works with default Surge XT'
                     : hasMidi
-                      ? 'Re-roll sound (keep MIDI)'
+                      ? linkedSoundHint
+                        ? `Re-roll sound (keep MIDI) — ${linkedSoundHint}`
+                        : 'Re-roll sound (keep MIDI)'
                       : 'Generate MIDI first'
                 }
               >
                 Shuffle
+                {linkedSoundHint && (
+                  <span
+                    aria-hidden
+                    data-testid="sdk-shuffle-linked-marker"
+                    className="absolute -top-1 -right-1 text-[8px] leading-none"
+                  >
+                    🔗
+                  </span>
+                )}
               </button>
             )}
             {freezeBadge && (
@@ -569,6 +587,7 @@ export function TrackRow({
             onToggleFavorite={onToggleFavorite}
             onImportSound={onImportSound}
             importSoundLabel={importSoundLabel}
+            linkedSoundHint={linkedSoundHint}
             editNotes={editNotes}
             onNotesChange={onNotesChange}
             editBars={editBars}

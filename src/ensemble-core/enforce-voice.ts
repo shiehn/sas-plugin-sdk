@@ -45,6 +45,12 @@ export interface EnforceVoiceOptions {
   scalePcs?: ReadonlySet<number>;
   /** Chord-tone pitch classes for a bar — exemptions for the scale snap. */
   chordPcsAtBar?: (bar: number) => ReadonlySet<number> | null;
+  /**
+   * Style-level per-note duration ceiling in beats (stab styles — see
+   * STYLE_RULES[*].maxNoteDurationBeats). A punch must not become a pad;
+   * longer notes are trimmed, never dropped.
+   */
+  maxNoteDurationBeats?: number;
 }
 
 export interface EnforceVoiceResult {
@@ -101,7 +107,7 @@ export function enforceVoice(
   const repairs: string[] = [];
   const clipEnd = opts.bars * BEATS_PER_BAR;
 
-  // 1. Clip bounds + duration floor.
+  // 1. Clip bounds + duration floor (+ the style's stab-length ceiling).
   let notes: EnsembleNote[] = [];
   for (const n of rawNotes) {
     if (!Number.isFinite(n.pitch) || !Number.isFinite(n.startBeat) || !Number.isFinite(n.durationBeats)) continue;
@@ -109,10 +115,14 @@ export function enforceVoice(
       repairs.push(`voice ${spec.voiceIndex}: dropped note outside the ${opts.bars}-bar clip (start ${n.startBeat})`);
       continue;
     }
-    const durationBeats = Math.max(
+    let durationBeats = Math.max(
       MIN_NOTE_DURATION_BEATS,
       Math.min(n.durationBeats, clipEnd - n.startBeat)
     );
+    if (opts.maxNoteDurationBeats !== undefined && durationBeats > opts.maxNoteDurationBeats) {
+      durationBeats = Math.max(MIN_NOTE_DURATION_BEATS, opts.maxNoteDurationBeats);
+      repairs.push(`voice ${spec.voiceIndex}: trimmed note at beat ${n.startBeat} to the style's ${opts.maxNoteDurationBeats}-beat stab ceiling`);
+    }
     notes.push({ ...n, durationBeats });
   }
 
