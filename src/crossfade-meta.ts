@@ -13,6 +13,7 @@
  */
 
 import type { TrackSoundSnapshot } from './types/plugin-sdk.types';
+import { barsToSeconds } from './utils/time-signature';
 
 /**
  * Stable, state-aware identity for a track's sound — used to auto-detect when a
@@ -174,14 +175,19 @@ export function gainToDb(gain: number): number {
  *
  * Returns dB point arrays for `host.setTrackVolumeAutomation` — origin on the top
  * layer, target on the bottom. @since SDK 2.25.0
+ *
+ * `timeSignature` ("N/D") sizes the time window for non-4/4 transitions;
+ * omitted = '4/4', reproducing the legacy `(bars * 4 * 60) / bpm` exactly.
+ * @since SDK 2.50.0 for the meter parameter.
  */
 export function buildCrossfadeVolumeCurves(
   bars: number,
   bpm: number,
   sliderPos: number,
   steps = 32,
+  timeSignature?: string,
 ): CrossfadeVolumeCurves {
-  const durationSeconds = (bars * 4 * 60) / Math.max(1, bpm);
+  const durationSeconds = barsToSeconds(bars, bpm, timeSignature);
   // Keep the crossover off the exact ends so there's always an actual fade.
   const s = Math.min(0.98, Math.max(0.02, sliderPos));
   const round = (n: number): number => Math.round(n * 1000) / 1000;

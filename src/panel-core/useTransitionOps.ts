@@ -42,6 +42,7 @@ import type { CrossfadeSelection } from '../components/CrossfadeModal';
 import type { FadeSelection } from '../components/FadeModal';
 import type { GeneratorTrackState } from './track-state';
 import type { GeneratorPanelAdapter, VerbatimFadeMember } from './adapter.types';
+import { panelClipEndSeconds, panelMaxBeats } from './meter';
 
 /** A crossfade pair resolved against live track state (both members present). */
 export interface ResolvedCrossfadePair extends CrossfadePairMeta {
@@ -131,9 +132,10 @@ export function useTransitionOps({
       bars: number,
       bpm: number,
       sliderPos: number,
+      timeSignature?: string,
     ): Promise<void> => {
       if (host.setTrackVolumeAutomation) {
-        const curves = buildCrossfadeVolumeCurves(bars, bpm, sliderPos);
+        const curves = buildCrossfadeVolumeCurves(bars, bpm, sliderPos, undefined, timeSignature);
         await host.setTrackVolumeAutomation(originTrackId, curves.origin).catch(() => {});
         await host.setTrackVolumeAutomation(targetTrackId, curves.target).catch(() => {});
       } else {
@@ -154,9 +156,10 @@ export function useTransitionOps({
       bpm: number,
       sliderPos: number,
       gesture: FadeGesture,
+      timeSignature?: string,
     ): Promise<void> => {
       if (!host.setTrackVolumeAutomation) return;
-      const points = buildFadeVolumeCurve(bars, bpm, direction, sliderPos, gesture);
+      const points = buildFadeVolumeCurve(bars, bpm, direction, sliderPos, gesture, undefined, timeSignature);
       await host.setTrackVolumeAutomation(trackId, points).catch(() => {});
     },
     [host],
@@ -252,7 +255,7 @@ export function useTransitionOps({
         });
         const clip: MidiClipData = {
           startTime: 0,
-          endTime: (mc.bars * 4 * 60) / mc.bpm,
+          endTime: panelClipEndSeconds(mc),
           tempo: mc.bpm,
           notes,
         };
@@ -296,7 +299,7 @@ export function useTransitionOps({
 
         // 5. Crossfade volume automation (centered slider). Leave unmuted —
         // the point is to hear it.
-        await applyCrossfadeAutomation(top.id, bottom.id, mc.bars, mc.bpm, 0.5);
+        await applyCrossfadeAutomation(top.id, bottom.id, mc.bars, mc.bpm, 0.5, mc.timeSignature);
 
         // 6. Persist the pairing (one key per member, shared groupId).
         const groupId = top.dbId;
@@ -416,7 +419,7 @@ export function useTransitionOps({
         });
         const clip: MidiClipData = {
           startTime: 0,
-          endTime: (mc.bars * 4 * 60) / mc.bpm,
+          endTime: panelClipEndSeconds(mc),
           tempo: mc.bpm,
           notes,
         };
@@ -447,7 +450,7 @@ export function useTransitionOps({
 
         // 5. One-sided volume curve (centered slider). Mark applied so the load
         // effect doesn't redundantly re-apply.
-        await applyFadeAutomation(track.id, direction, mc.bars, mc.bpm, 0.5, gesture);
+        await applyFadeAutomation(track.id, direction, mc.bars, mc.bpm, 0.5, gesture, mc.timeSignature);
         appliedFadeAutomationRef.current.add(track.id);
 
         // 6. Persist the fade metadata (one key for the lone track).
@@ -579,6 +582,7 @@ export function useTransitionOps({
             mc.bars,
             mc.bpm,
             pos,
+            mc.timeSignature,
           );
           if (activeSceneId) {
             const sceneData = (await host.getAllSceneData(activeSceneId)) as Record<
@@ -641,6 +645,7 @@ export function useTransitionOps({
             mc.bpm,
             pos,
             fade.meta.gesture,
+            mc.timeSignature,
           );
           if (activeSceneId) {
             const sceneData = (await host.getAllSceneData(activeSceneId)) as Record<
@@ -696,8 +701,8 @@ export function useTransitionOps({
         const mc = await host.getMusicalContext();
         const sliderPos = groupAdapter.defaultSliderPos?.(direction) ?? 0.5;
         const gesture: FadeGesture = 'volume';
-        const clipEnd = (mc.bars * 4 * 60) / mc.bpm;
-        const maxBeats = mc.bars * 4;
+        const clipEnd = panelClipEndSeconds(mc);
+        const maxBeats = panelMaxBeats(mc);
 
         for (const member of members) {
           // 1. Fresh family track per member.
@@ -741,7 +746,7 @@ export function useTransitionOps({
           await copyTrackFx(handle.id, member.dbId);
 
           // 5. Shared one-sided curve; mark applied so the load effect skips it.
-          await applyFadeAutomation(handle.id, direction, mc.bars, mc.bpm, sliderPos, gesture);
+          await applyFadeAutomation(handle.id, direction, mc.bars, mc.bpm, sliderPos, gesture, mc.timeSignature);
           appliedFadeAutomationRef.current.add(handle.id);
         }
 
@@ -835,6 +840,7 @@ export function useTransitionOps({
               mc.bpm,
               pos,
               group.gesture,
+              mc.timeSignature,
             );
             if (activeSceneId && sceneData) {
               const meta = asFadeMeta(sceneData[`track:${member.dbId}:fade`]);
@@ -960,6 +966,7 @@ export function useTransitionOps({
           mc.bpm,
           fade.meta.sliderPos,
           fade.meta.gesture,
+          mc.timeSignature,
         );
       }
     })();

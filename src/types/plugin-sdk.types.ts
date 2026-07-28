@@ -1466,6 +1466,10 @@ export interface PluginHost {
    *
    * The fitted sample is cached in the library by content hash, so
    * subsequent calls for the same `(sample, bpm, bars)` return instantly.
+   *
+   * 4/4 scenes only: the sample library's stored `duration_bars` are
+   * 4/4-relative, so fitting into a non-4/4 scene is rejected with
+   * `TIME_SIGNATURE_UNSUPPORTED`. @since SDK 2.50.0 for the meter gate.
    */
   fitSampleToScene(sampleId: string): Promise<PluginSampleInfo>;
 
@@ -2117,7 +2121,12 @@ export interface MusicalContext {
   bpm: number;           // 20-960
   bars: number;          // Scene length in bars
   genre: string | null;  // 'Drum & Bass', 'Lo-fi Hip Hop', etc.
-  timeSignature: string; // '4/4', '3/4', '6/8'
+  /**
+   * The SCENE's time signature ("N/D", e.g. '4/4', '3/4', '6/8') on hosts
+   * ≥ 2.50; earlier hosts returned the project-level value (which was
+   * always '4/4' in practice).
+   */
+  timeSignature: string;
   chordProgression: PluginChordTiming[];
   /**
    * The scene's natural-language contract prompt (e.g. "dark psytrance,
@@ -2323,6 +2332,20 @@ export interface PluginSceneContext {
   transitionFromSceneId?: string | null;
   /** For a transition scene, the DB id of the scene it bridges TO (target). Null otherwise. @since SDK 2.22.0 */
   transitionToSceneId?: string | null;
+  /**
+   * Collapsed chord segments with quarter-note timing — the display twin of
+   * `chords` for panels that want to RENDER harmony against time (piano-roll
+   * overlays, per-beat chord strips). Chords are stored one entry per beat
+   * and may change at ANY integer beat (sub-bar harmonic rhythm), so a
+   * segment's [startQn, endQn) is not necessarily bar-aligned. Absent on
+   * older hosts. @since host 2.42.0
+   */
+  chordTiming?: PluginChordTiming[];
+  /**
+   * The scene's time signature as "N/D" (e.g. '3/4', '6/8'). Absent on
+   * older hosts ⇒ treat as '4/4'. @since SDK 2.50.0
+   */
+  timeSignature?: string;
 }
 
 /** Placeholder track state for the progressive bulk-add UX */
@@ -2577,7 +2600,8 @@ export type PluginErrorCode =
   | 'CAPABILITY_DENIED'      // Plugin lacks required capability
   | 'SECRET_NOT_FOUND'       // Secret key doesn't exist
   | 'VALIDATION_ERROR'       // Inputs failed schema/format validation
-  | 'AUDIO_CAPTURE_DENIED';  // OS-level mic permission denied or input device unavailable
+  | 'AUDIO_CAPTURE_DENIED'   // OS-level mic permission denied or input device unavailable
+  | 'TIME_SIGNATURE_UNSUPPORTED'; // Scene meter outside the plugin's supportedTimeSignatures (since SDK 2.50.0)
 
 export class PluginError extends Error {
   public readonly code: PluginErrorCode;
@@ -2615,6 +2639,18 @@ export interface PluginManifest {
   settings?: Record<string, SettingDefinition>;
   builtIn?: boolean;
   repository?: string;         // e.g., 'https://github.com/user/my-plugin'
+  /**
+   * Scene time signatures this plugin can author content for. Array entries
+   * are exact meters ('3/4') or denominator-family wildcards ('*\/4', '*\/8'
+   * — star-slash-denominator); the string '*' means fully meter-agnostic.
+   * Absent ⇒ ['4/4'] (the safe back-compat default: every pre-2.50 plugin
+   * keeps working exactly as today in 4/4 scenes). For scenes whose meter
+   * falls outside the declaration the host DISABLES the panel chrome and
+   * REFUSES content writes (createTrack, writeMidiClip, sample placement,
+   * stems, recording) with `TIME_SIGNATURE_UNSUPPORTED`; read paths stay
+   * open. @since SDK 2.50.0
+   */
+  supportedTimeSignatures?: string[] | '*';
 }
 
 export interface PluginCapabilities {
@@ -2668,8 +2704,13 @@ export interface RecordingTargetInfo {
   isRenderLocked: boolean;
   /** Current project BPM. */
   bpm: number;
-  /** Active scene length in bars (4/4 assumed), or null when no scene. */
+  /** Active scene length in bars (of `timeSignature` — see that field), or null when no scene. */
   bars: number | null;
+  /**
+   * Active scene's time signature as "N/D". Absent on older hosts ⇒ treat
+   * as '4/4' (which is what `bars` historically assumed). @since SDK 2.50.0
+   */
+  timeSignature?: string;
   /**
    * Sample-perfect-recording compatibility (Path 2 gate). When false,
    * the recorder must refuse to start a session and surface

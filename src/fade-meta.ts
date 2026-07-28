@@ -17,6 +17,7 @@
  */
 
 import { type VolumeAutomationPoint, FADE_FLOOR_DB, gainToDb } from './crossfade-meta';
+import { barsToSeconds } from './utils/time-signature';
 
 /** Which way the lone track fades over the transition. */
 export type FadeDirection = 'in' | 'out';
@@ -184,6 +185,10 @@ export function splitFadeEntries<E extends FadeEntry>(entries: E[]): {
  * Points span [0, durationSeconds] so the engine re-reads them each loop. Returns
  * dB points for `host.setTrackVolumeAutomation`.
  *
+ * `timeSignature` ("N/D") sizes the time window for non-4/4 transitions;
+ * omitted = '4/4', reproducing the legacy `(bars * 4 * 60) / bpm` exactly
+ * (@since SDK 2.50.0 for the meter parameter).
+ *
  * @since SDK 2.28.0
  */
 export function buildFadeVolumeCurve(
@@ -193,8 +198,9 @@ export function buildFadeVolumeCurve(
   sliderPos: number,
   gesture: FadeGesture,
   steps = 32,
+  timeSignature?: string,
 ): VolumeAutomationPoint[] {
-  const durationSeconds = (bars * 4 * 60) / Math.max(1, bpm);
+  const durationSeconds = barsToSeconds(bars, bpm, timeSignature);
 
   // build: the notes do the fade — hold the level flat at unity.
   if (gesture === 'build') {

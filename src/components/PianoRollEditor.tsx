@@ -192,7 +192,14 @@ export interface PianoRollEditorProps {
   bars: number;
   /** BPM — used only for audition timing in v1. */
   bpm: number;
-  /** Beats per bar (time-signature numerator). Default 4. */
+  /**
+   * QUARTER-NOTES per bar — NOT the time-signature numerator. Notes are
+   * quarter-note denominated (`startBeat`/`durationBeats`), so the grid's
+   * bar width must be too: pass `parseTimeSignature(ts).quarterNotesPerBar`
+   * (4/4 → 4, 3/4 → 3, 6/8 → 3, 7/8 → 3.5 — fractional values are safe:
+   * the geometry is continuous math + CSS gradients, no integer loops).
+   * Default 4 (the 4/4 value).
+   */
   beatsPerBar?: number;
   /** Snap step in quarter notes (1 = ¼ note, 0.25 = 1/16). Default 0.25. */
   snap?: number;

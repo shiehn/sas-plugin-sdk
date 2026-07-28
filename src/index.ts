@@ -372,3 +372,30 @@ export {
   type ScoredCandidate,
   type PickTopKOptions,
 } from './utils/semantic-match';
+
+// Time-signature primitives — meter parsing, the curated allowlist, every
+// meter-dependent bars↔beats↔seconds conversion, and the manifest meter
+// matcher the host uses to gate panels. Byte-identical twin of the app's
+// `src/shared/utils/time-signature.ts` (pinned by the app's sdk-parity
+// test). Since 2.50.0.
+export {
+  ALLOWED_TIME_SIGNATURES,
+  DEFAULT_TIME_SIGNATURE,
+  TIME_SIGNATURE_MAX_NUMERATOR,
+  TIME_SIGNATURE_DENOMINATORS,
+  parseTimeSignature,
+  tryParseTimeSignature,
+  isAllowedTimeSignature,
+  formatMeter,
+  barsToQn,
+  barsToSeconds,
+  denseGridLength,
+  meterFamily,
+  beatGrouping,
+  strongSlots,
+  finalCadenceSlotCount,
+  manifestSupportsMeter,
+  type TimeSignatureId,
+  type ParsedTimeSignature,
+  type MeterFamily,
+} from './utils/time-signature';

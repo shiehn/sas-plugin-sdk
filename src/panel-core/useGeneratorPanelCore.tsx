@@ -36,6 +36,7 @@ import type { DrawerTab } from '../components/TrackDrawer';
 import { type GeneratorTrackState, newTrackState } from './track-state';
 import { pluginFxToToggleFx, trackDataKey } from './panel-helpers';
 import { runLinkedBroadcast, type GroupBroadcastProgress } from './linked-broadcast';
+import { panelClipEndSeconds } from './meter';
 import {
   parseTrackGroups,
   resolveTrackGroups,
@@ -673,7 +674,7 @@ export function useGeneratorPanelCore({
           const mc = await host.getMusicalContext();
           await host.writeMidiClip(handle.id, {
             startTime: 0,
-            endTime: (mc.bars * 4 * 60) / mc.bpm,
+            endTime: panelClipEndSeconds(mc),
             tempo: mc.bpm,
             notes,
           });
@@ -1533,7 +1534,7 @@ export function useGeneratorPanelCore({
               const mc = await host.getMusicalContext();
               await host.writeMidiClip(trackId, {
                 startTime: 0,
-                endTime: (mc.bars * 4 * 60) / mc.bpm,
+                endTime: panelClipEndSeconds(mc),
                 tempo: mc.bpm,
                 notes,
               });

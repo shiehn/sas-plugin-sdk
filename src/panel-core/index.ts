@@ -38,6 +38,12 @@ export {
   type LinkedBroadcastResult,
 } from './linked-broadcast';
 export {
+  panelMeter,
+  panelClipEndSeconds,
+  panelMaxBeats,
+  type PanelMeterContext,
+} from './meter';
+export {
   parseTrackGroups,
   resolveTrackGroups,
   type TrackGroupMember,
