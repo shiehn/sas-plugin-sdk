@@ -109,7 +109,10 @@ export const VolumeSlider: React.FC<VolumeSliderProps> = ({
 
   return (
     <div
-      className={`flex items-center ${className}`}
+      // h-3 must match the thumb size below: the 12px thumb overhangs the 6px
+      // track, and without this height it paints under siblings stacked
+      // beneath the slider (e.g. the bus meters in PanelMasterStrip).
+      className={`h-3 flex items-center ${className}`}
       title={`Volume: ${formatDb(localValue)}`}
     >
       <input

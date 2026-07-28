@@ -32,6 +32,17 @@ export interface DownloadPackButtonProps {
   displayName: string;
   /** Bundle size in bytes (shown in the large-variant label). */
   sizeBytes?: number;
+  /** On-disk size once installed; appended to labels/tooltips when known. @since SDK 2.49.0 */
+  installedSizeBytes?: number;
+  /**
+   * Which published size variant to install ('small' = compact subset,
+   * 'large' = complete). Omit for the host default. Only pass 'small' when
+   * the host advertised it via `getSamplePackInfo().variants.small`.
+   * @since SDK 2.49.0
+   */
+  packVariant?: 'small' | 'large';
+  /** Overrides the idle label (progress/error states still take over). @since SDK 2.49.0 */
+  customLabel?: string;
   variant?: DownloadPackButtonVariant;
   /** Called once after the install completes (status === 'complete'). */
   onDownloadComplete?: () => void;
@@ -40,7 +51,7 @@ export interface DownloadPackButtonProps {
 // Base-1024 (GiB/MiB) to match the host's own SamplePackDownloader formatter and
 // the `_pack-version.json` / sample-packs.ts size comments (e.g. a 28.5e9-byte
 // instrument bundle reads as "26.6 GB", not the decimal "28.5 GB").
-function formatSize(bytes?: number): string {
+export function formatSize(bytes?: number): string {
   if (!bytes || bytes <= 0) return '';
   const gb = bytes / 1024 ** 3;
   if (gb >= 1) return `${gb.toFixed(1)} GB`;
@@ -48,11 +59,23 @@ function formatSize(bytes?: number): string {
   return `${Math.round(mb)} MB`;
 }
 
+/** "(2.7 GB download · ~8.5 GB on disk)" — or just the zip size when that's all we know. */
+export function formatSizeDetail(sizeBytes?: number, installedSizeBytes?: number): string {
+  if (!sizeBytes || sizeBytes <= 0) return '';
+  const zip = formatSize(sizeBytes);
+  return installedSizeBytes && installedSizeBytes > 0
+    ? `(${zip} download · ~${formatSize(installedSizeBytes)} on disk)`
+    : `(${zip})`;
+}
+
 export const DownloadPackButton: React.FC<DownloadPackButtonProps> = ({
   host,
   packId,
   displayName,
   sizeBytes,
+  installedSizeBytes,
+  packVariant,
+  customLabel,
   variant = 'compact',
   onDownloadComplete,
 }) => {
@@ -82,7 +105,11 @@ export const DownloadPackButton: React.FC<DownloadPackButtonProps> = ({
       setStatus('downloading');
       setProgress(0);
       setErrorMessage(null);
-      const result = await host.startSamplePackDownload(packId);
+      // Omit the variant arg entirely when unset — older hosts declare a
+      // 1-arg method, and the mocked-host tests pin the exact call shape.
+      const result = packVariant
+        ? await host.startSamplePackDownload(packId, packVariant)
+        : await host.startSamplePackDownload(packId);
       if (!result.success) {
         setStatus('error');
         setErrorMessage(result.error || 'Download failed');
@@ -116,8 +143,9 @@ export const DownloadPackButton: React.FC<DownloadPackButtonProps> = ({
       case 'error':
         return 'Retry';
       default:
+        if (customLabel) return customLabel;
         return variant === 'large'
-          ? `Download ${displayName}${sizeBytes ? ` (${formatSize(sizeBytes)})` : ''}`
+          ? `Download ${displayName}${sizeBytes ? ` ${formatSizeDetail(sizeBytes, installedSizeBytes)}` : ''}`
           : 'Download';
     }
   })();
@@ -126,7 +154,8 @@ export const DownloadPackButton: React.FC<DownloadPackButtonProps> = ({
     if (status === 'error') return errorMessage || 'Download failed. Click to retry.';
     if (isWorking) return `${buttonLabel} — ${displayName}`;
     if (status === 'complete') return 'Installation complete';
-    return `Download ${displayName}${sizeBytes ? ` (${formatSize(sizeBytes)})` : ''}`;
+    if (customLabel) return customLabel;
+    return `Download ${displayName}${sizeBytes ? ` ${formatSizeDetail(sizeBytes, installedSizeBytes)}` : ''}`;
   })();
 
   const baseClasses =
@@ -148,7 +177,7 @@ export const DownloadPackButton: React.FC<DownloadPackButtonProps> = ({
   return (
     <div>
       <button
-        data-testid={`download-pack-button-${packId}`}
+        data-testid={`download-pack-button-${packId}${packVariant ? `-${packVariant}` : ''}`}
         onClick={handleClick}
         disabled={isDisabled}
         className={className}

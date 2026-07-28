@@ -243,6 +243,30 @@ export function TrackRow({
   // was one stray click away from losing a track's MIDI + sound.
   const [confirmDelete, setConfirmDelete] = React.useState(false);
 
+  // The generating overlay must stop where the right-hand button grid starts,
+  // but the grid's width varies per panel (optional Create/Copy/Shuffle/→ All/
+  // freeze badge/FX/▾), so no fixed reservation fits every panel. Measure the
+  // grid's left edge inside the row and size the overlay to it; until measured
+  // (first paint, jsdom) fall back to the legacy fixed right-44 reservation.
+  const rowRef = React.useRef<HTMLDivElement | null>(null);
+  const controlsRef = React.useRef<HTMLDivElement | null>(null);
+  const [controlsLeft, setControlsLeft] = React.useState<number | null>(null);
+
+  React.useLayoutEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return undefined;
+    const measure = (): void => {
+      const left = controls.offsetLeft;
+      setControlsLeft(left > 0 ? left : null);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(controls);
+    if (rowRef.current) observer.observe(rowRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   // Freeze state lives HERE (the row never unmounts while its drawer does) —
   // shared by the ❄ badge below and the drawer's Freeze tab (@since 2.47.0).
   // Inert on hosts without the freeze surface.
@@ -283,6 +307,7 @@ export function TrackRow({
     <div data-testid="sdk-track-row-wrapper" className="w-full" {...(drag?.rowProps ?? {})}>
       <div
         data-testid="sdk-track-row"
+        ref={rowRef}
         className={`relative flex items-stretch gap-1 p-2 ${levels ? 'rounded-t-sm' : 'rounded-sm'} border w-full overflow-hidden ${borderClass} bg-sas-panel-alt ${drag?.isDragging ? 'opacity-40' : ''} ${drag?.isDragTarget ? 'ring-2 ring-sas-accent ring-inset' : ''}`}
         style={{
           borderLeftColor: needsGeneration ? '#f59e0b' : borderColorStyle,
@@ -304,9 +329,14 @@ export function TrackRow({
           </div>
         )}
 
-        {/* Generating progress overlay - stops before buttons (right-44) */}
+        {/* Generating progress overlay — runs up to the measured start of the
+            button grid, so it never slides under the controls regardless of
+            which buttons this panel renders */}
         {isGenerating && (
-          <div className="absolute left-0 top-0 bottom-0 right-44 z-20">
+          <div
+            className={`absolute left-0 top-0 bottom-0 z-20 ${controlsLeft === null ? 'right-44' : ''}`}
+            style={controlsLeft === null ? undefined : { width: controlsLeft }}
+          >
             <SorceryProgressBar
               isLoading={true}
               statusText="CONJURING MIDI..."
@@ -383,7 +413,7 @@ export function TrackRow({
         )}
 
         {/* Right: Button grid (2 rows) - z-30 to stay above generating overlay */}
-        <div className="flex flex-col gap-0.5 flex-shrink-0 relative z-30 justify-center">
+        <div ref={controlsRef} className="flex flex-col gap-0.5 flex-shrink-0 relative z-30 justify-center">
           {/* Top row: [Create] [Copy] M x — Create/Copy only shown when handlers provided */}
           <div className="flex gap-1 items-center">
             {onGenerate && (

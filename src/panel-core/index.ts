@@ -31,6 +31,13 @@ export {
   type SurgeSoundAdapterOverrides,
 } from './surge-sound-adapter';
 export {
+  runLinkedBroadcast,
+  type GroupBroadcastProgress,
+  type LinkedBroadcastTarget,
+  type RunLinkedBroadcastOptions,
+  type LinkedBroadcastResult,
+} from './linked-broadcast';
+export {
   parseTrackGroups,
   resolveTrackGroups,
   type TrackGroupMember,

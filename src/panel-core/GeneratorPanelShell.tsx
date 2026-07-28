@@ -123,6 +123,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
     fadeMemberDbIds,
     resolvedGenericGroups,
     genericGroupMemberDbIds,
+    groupBroadcast,
     availableInstruments,
     instrumentsLoading,
     handlers,
@@ -361,7 +362,45 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
 
   // Phase 3: NORMAL — real tracks using SDK TrackRow
   return (
-    <div data-testid={`${identity.familyKey}-section`} className="p-2 space-y-2">
+    <div data-testid={`${identity.familyKey}-section`} className="relative p-2 space-y-2">
+      {/* Blocking overlay while a linked-group broadcast applies a sound /
+          instrument serially across every sibling (@since SDK 2.49.0). The
+          per-part applies are engine round-trips with large state blobs, so
+          a full group takes seconds — block the panel so a second gesture
+          can't interleave, and show determinate progress. */}
+      {groupBroadcast && (
+        <div
+          data-testid={`${identity.familyKey}-group-broadcast-overlay`}
+          role="alert"
+          aria-busy="true"
+          className="absolute inset-0 z-30 flex items-center justify-center rounded-sm bg-black/60 backdrop-blur-[1px]"
+        >
+          <div className="w-[min(20rem,90%)] rounded-sm border border-sas-border bg-sas-panel p-3 shadow-xl">
+            <div className="mb-1 font-mono text-xs text-sas-text">
+              Applying {groupBroadcast.kind === 'sound' ? 'sound' : 'instrument'} to all parts…
+            </div>
+            <div
+              className="mb-2 truncate font-mono text-[10px] text-sas-muted"
+              title={groupBroadcast.label}
+            >
+              {groupBroadcast.label}
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded bg-sas-panel-alt">
+              {/* Same sas-accent gradient as SorceryProgressBar — progress is
+                  always the project green, not the panel family's accent. */}
+              <div
+                className="h-full bg-gradient-to-r from-sas-accent/70 to-sas-accent transition-all duration-300"
+                style={{
+                  width: `${Math.round((groupBroadcast.done / Math.max(1, groupBroadcast.total)) * 100)}%`,
+                }}
+              />
+            </div>
+            <div className="mt-1 text-right font-mono text-[10px] text-sas-muted">
+              {groupBroadcast.done}/{groupBroadcast.total} parts
+            </div>
+          </div>
+        </div>
+      )}
       {features.importTracks && host.listImportableTracks && (
         <ImportTrackModal
           host={host}

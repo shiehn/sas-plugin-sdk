@@ -10,7 +10,7 @@
 
 import React from 'react';
 import type { PluginHost } from '../types/plugin-sdk.types';
-import { DownloadPackButton } from './DownloadPackButton';
+import { DownloadPackButton, formatSizeDetail } from './DownloadPackButton';
 
 export type SamplePackCTACardStatus = 'missing' | 'stale' | 'checking';
 
@@ -20,6 +20,17 @@ export interface SamplePackCardInfo {
   displayName: string;
   description: string;
   sizeBytes?: number;
+  /** On-disk size once installed (complete variant), when known. @since SDK 2.49.0 */
+  installedSizeBytes?: number;
+  /**
+   * Published size variants (from `host.getSamplePackInfo`). When `small` is
+   * present the card offers a Compact + Complete choice; its presence implies
+   * the host understands variant downloads. @since SDK 2.49.0
+   */
+  variants?: {
+    small?: { sizeBytes: number; installedSizeBytes?: number };
+    large?: { sizeBytes: number; installedSizeBytes?: number };
+  };
 }
 
 export interface SamplePackCTACardProps {
@@ -57,6 +68,8 @@ export const SamplePackCTACard: React.FC<SamplePackCTACardProps> = ({
       ? `A newer version is available for download.`
       : pack.description;
 
+  const small = pack.variants?.small;
+
   return (
     <div
       data-testid={`sample-pack-cta-${pack.packId}`}
@@ -67,14 +80,45 @@ export const SamplePackCTACard: React.FC<SamplePackCTACardProps> = ({
       </div>
       <div className="text-base text-sas-text mb-1">{headline}</div>
       <div className="text-xs text-sas-muted mb-6 max-w-md">{sublabel}</div>
-      <DownloadPackButton
-        host={host}
-        packId={pack.packId}
-        displayName={pack.displayName}
-        sizeBytes={pack.sizeBytes}
-        variant="large"
-        onDownloadComplete={onDownloadComplete}
-      />
+      {small ? (
+        // Two published sizes: lead with Compact, offer Complete beneath.
+        // Both buttons share the pack's progress stream, so starting either
+        // disables the pair until the install resolves.
+        <div className="flex flex-col items-center gap-3">
+          <DownloadPackButton
+            host={host}
+            packId={pack.packId}
+            displayName={pack.displayName}
+            sizeBytes={small.sizeBytes}
+            installedSizeBytes={small.installedSizeBytes}
+            packVariant="small"
+            customLabel={`Download Compact ${formatSizeDetail(small.sizeBytes, small.installedSizeBytes)}`}
+            variant="large"
+            onDownloadComplete={onDownloadComplete}
+          />
+          <DownloadPackButton
+            host={host}
+            packId={pack.packId}
+            displayName={pack.displayName}
+            sizeBytes={pack.sizeBytes}
+            installedSizeBytes={pack.installedSizeBytes}
+            packVariant="large"
+            customLabel={`Complete Library ${formatSizeDetail(pack.sizeBytes, pack.installedSizeBytes)}`}
+            variant="compact"
+            onDownloadComplete={onDownloadComplete}
+          />
+        </div>
+      ) : (
+        <DownloadPackButton
+          host={host}
+          packId={pack.packId}
+          displayName={pack.displayName}
+          sizeBytes={pack.sizeBytes}
+          installedSizeBytes={pack.installedSizeBytes}
+          variant="large"
+          onDownloadComplete={onDownloadComplete}
+        />
+      )}
     </div>
   );
 };

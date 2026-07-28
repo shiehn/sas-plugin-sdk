@@ -35,6 +35,7 @@ import { parseFades, splitFadeEntries, type FadeEntry } from '../fade-meta';
 import type { DrawerTab } from '../components/TrackDrawer';
 import { type GeneratorTrackState, newTrackState } from './track-state';
 import { pluginFxToToggleFx, trackDataKey } from './panel-helpers';
+import { runLinkedBroadcast, type GroupBroadcastProgress } from './linked-broadcast';
 import {
   parseTrackGroups,
   resolveTrackGroups,
@@ -129,6 +130,15 @@ export interface GeneratorPanelCore {
   resolvedGenericGroups: Record<string, ResolvedGroupsResult<unknown, GeneratorTrackState>>;
   genericGroupMemberDbIds: Set<string>;
 
+  /**
+   * Live progress of a linked-group broadcast (a sound or instrument being
+   * applied serially across every linked sibling), or null when idle. The
+   * shell renders a blocking overlay from this while the applies run; the
+   * completion toast (all parts / some parts only) fires from the core.
+   * @since SDK 2.49.0
+   */
+  groupBroadcast: GroupBroadcastProgress | null;
+
   // Instrument picker
   availableInstruments: InstrumentDescriptor[];
   instrumentsLoading: boolean;
@@ -222,6 +232,7 @@ export function useGeneratorPanelCore({
 
   const [tracks, setTracks] = useState<GeneratorTrackState[]>([]);
   const [isLoadingTracks, setIsLoadingTracks] = useState(false);
+  const [groupBroadcast, setGroupBroadcast] = useState<GroupBroadcastProgress | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [soundImportTarget, setSoundImportTarget] = useState<GeneratorTrackState | null>(null);
   const [designerView, setDesignerView] = useState(false);
@@ -1036,10 +1047,17 @@ export function useGeneratorPanelCore({
       } catch {
         /* non-fatal */
       }
-      const appliedIds = new Set<string>();
-      const failed: string[] = [];
-      for (const target of others) {
-        try {
+      // The runner owns progress (drives the shell's blocking overlay) and the
+      // completion toast (all parts / some parts only). Serial by design.
+      const { appliedIds } = await runLinkedBroadcast({
+        kind: 'sound',
+        label,
+        targets: others,
+        onProgress: setGroupBroadcast,
+        showToast: (type, title, message) => host.showToast(type, title, message),
+        onTargetError: (target, err) =>
+          console.warn(`[${logTag}] Linked sound apply failed for ${target.engineId}:`, err),
+        applyToTarget: async (target) => {
           if (soundHistory.list(target.engineId).entries.length === 0) {
             try {
               const cap = await adapter.sound.captureSoundDescriptor(target.engineId);
@@ -1057,12 +1075,8 @@ export function useGeneratorPanelCore({
             /* non-fatal */
           }
           soundHistory.record(target.engineId, descriptor, label);
-          appliedIds.add(target.engineId);
-        } catch (err: unknown) {
-          failed.push(target.label ?? target.engineId);
-          console.warn(`[${logTag}] Linked sound apply failed for ${target.engineId}:`, err);
-        }
-      }
+        },
+      });
       // Shuffle-cycle coherence: these siblings now HAVE this sound — exclude
       // it from their own future shuffles this session.
       if (appliedIds.size > 0) {
@@ -1072,13 +1086,6 @@ export function useGeneratorPanelCore({
               ? { ...t, shuffleHistory: new Set([...t.shuffleHistory, label]) }
               : t,
           ),
-        );
-      }
-      if (failed.length > 0) {
-        host.showToast(
-          'warning',
-          'Linked sound applied to some parts only',
-          `Skipped: ${failed.join(', ')}`,
         );
       }
     },
@@ -1106,9 +1113,18 @@ export function useGeneratorPanelCore({
       }
       const others = (targets ?? []).filter((t) => t.engineId !== sourceTrackId);
       if (others.length === 0) return;
-      const failed: string[] = [];
-      for (const target of others) {
-        try {
+      // Same runner as the sound broadcast: overlay progress + completion
+      // toast. Instrument loads are the slowest applies of all (VST3
+      // instantiation per sibling).
+      await runLinkedBroadcast({
+        kind: 'instrument',
+        label: pluginId,
+        targets: others,
+        onProgress: setGroupBroadcast,
+        showToast: (type, title, message) => host.showToast(type, title, message),
+        onTargetError: (target, err) =>
+          console.warn(`[${logTag}] Linked instrument apply failed for ${target.engineId}:`, err),
+        applyToTarget: async (target) => {
           await host.setTrackInstrument(target.engineId, pluginId);
           const descriptor = await host.getTrackInstrument(target.engineId);
           setTracks((prev) =>
@@ -1123,18 +1139,8 @@ export function useGeneratorPanelCore({
                 : t,
             ),
           );
-        } catch (err: unknown) {
-          failed.push(target.label ?? target.engineId);
-          console.warn(`[${logTag}] Linked instrument apply failed for ${target.engineId}:`, err);
-        }
-      }
-      if (failed.length > 0) {
-        host.showToast(
-          'warning',
-          'Instrument applied to some parts only',
-          `Skipped: ${failed.join(', ')}`,
-        );
-      }
+        },
+      });
     },
     [adapter, makeServices, host, logTag],
   );
@@ -1888,6 +1894,7 @@ export function useGeneratorPanelCore({
     resolvedGroupFades,
     resolvedGenericGroups,
     genericGroupMemberDbIds,
+    groupBroadcast,
     availableInstruments,
     instrumentsLoading,
     handlers,

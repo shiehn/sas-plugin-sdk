@@ -23,6 +23,14 @@ export type GeneratorType = 'midi' | 'audio' | 'sample' | 'hybrid';
 export interface DrumKit {
   /** Absolute path to the sample (WAV, AIFF, FLAC). Triggered on every note-on. */
   samplePath: string;
+  /**
+   * Set true when REPLAYING an already-persisted sample (e.g. re-arming the
+   * sampler on scene/project load), as opposed to a user changing the kit.
+   * A restore only re-arms the engine sampler: it must not count as a sound
+   * edit (a frozen track stays frozen) and skips re-persisting state that is
+   * already on disk.
+   */
+  restore?: boolean;
 }
 
 /**
@@ -66,6 +74,14 @@ export interface InstrumentSampler {
   name: string;
   /** Disjoint zones, ordered low->high by rootKey. At least one required. */
   zones: ReadonlyArray<InstrumentZone>;
+  /**
+   * Set true when REPLAYING an already-persisted sound (e.g. re-arming the
+   * sampler on scene/project load), as opposed to a user changing the
+   * instrument. A restore only re-arms the engine sampler: it must not count
+   * as a sound edit (a frozen track stays frozen) and skips re-persisting
+   * state that is already on disk. Mirrors `DrumKit.restore`.
+   */
+  restore?: boolean;
 }
 
 /** Options for `host.listAudioFiles`. */
@@ -362,6 +378,19 @@ export interface SamplePackPublicInfo {
   description: string;
   /** Size in bytes of the default download variant. */
   sizeBytes: number;
+  /** Bytes on disk once installed (default/complete variant), when known. @since SDK 2.49.0 */
+  installedSizeBytes?: number;
+  /**
+   * Published size variants for the CTA to offer. `large` mirrors the
+   * top-level sizes; `small` (the compact sampled subset) is present only
+   * when the host actually publishes one — its presence also implies the
+   * host understands `startSamplePackDownload(packId, 'small')`.
+   * @since SDK 2.49.0
+   */
+  variants?: {
+    small?: { sizeBytes: number; installedSizeBytes?: number };
+    large?: { sizeBytes: number; installedSizeBytes?: number };
+  };
 }
 
 /** Scoped API surface that plugins interact with. Plugins NEVER get direct TracktionEngine access. */
@@ -1181,7 +1210,8 @@ export interface PluginHost {
    * @since SDK 2.8.0
    */
   startSamplePackDownload(
-    packId: string
+    packId: string,
+    variant?: 'small' | 'large'
   ): Promise<{ success: boolean; error?: string }>;
 
   /**
