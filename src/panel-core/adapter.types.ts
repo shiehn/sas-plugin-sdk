@@ -417,8 +417,14 @@ export interface GeneratorPanelAdapter<M = unknown> {
    * @since SDK 2.43.0
    */
   onTrackCreated?(handle: PluginTrackHandle, ctx: TrackCreatedContext): Promise<void>;
-  /** System prompt for the family's LLM calls (incl. core-owned crossfade/fade generation). */
-  buildSystemPrompt(validRoles: readonly string[]): string;
+  /**
+   * System prompt for the family's LLM calls (incl. core-owned crossfade/fade
+   * generation). `timeSignature` (@since SDK 2.50.0) is the scene meter
+   * ("N/D"); the core passes it so meter-aware families can append their
+   * non-4/4 guidance (see `buildPluginMeterGuidance`). Implementations may
+   * ignore it — omitting the parameter keeps the prompt 4/4-shaped.
+   */
+  buildSystemPrompt(validRoles: readonly string[], timeSignature?: string): string;
   /** Parse the family's LLM note responses (crossfade/fade flows). */
   parseNotesResponse(content: string): LLMNoteResponse | null;
   sound: PanelSoundAdapter;

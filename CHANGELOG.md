@@ -32,10 +32,28 @@ npm package version now tracks 1:1 (they historically diverged; converged at
   gain an optional trailing `timeSignature?` param (omitted = 4/4-identical);
   durations now route through `barsToSeconds`.
 - **panel-core**: new `meter.ts` helpers `panelClipEndSeconds` /
-  `panelMaxBeats` / `panelMeter`; `useGeneratorPanelCore` +
-  `useTransitionOps` compute clip `endTime` / note clamps from
-  `MusicalContext.timeSignature` and thread the meter into the fade/crossfade
-  automation curves.
+  `panelMaxBeats` / `panelMeter` / `panelQuarterNotesPerBar`;
+  `useGeneratorPanelCore` + `useTransitionOps` compute clip `endTime` / note
+  clamps from `MusicalContext.timeSignature` and thread the meter into the
+  fade/crossfade automation curves.
+- **panel-core `meter-prompt.ts`** (new): `buildPluginMeterGuidance(ts)` →
+  `{ rhythm, grouping, barArithmetic }` — per-meter-family musical guidance
+  for plugin LLM prompts (waltz no-backbeat 3/4, 6/8 second-pulse backbeat +
+  threes, 12/8 shuffle pulses, odd/asymmetric group-start anchoring with the
+  grouping stated, 2/4 march, 9/8 three pulses), plus the prompt-ready
+  `formatPluginMeterGuidance(ts)` renderer. **'4/4' returns EMPTY strings** —
+  plugins keep their 4/4 prompts byte-identical and only append guidance on
+  non-4/4 scenes.
+- **Piano-roll meter wiring**: `GeneratorTrackState.editBeatsPerBar` (quarter
+  notes per bar; default 4) threads through `GeneratorPanelShell` →
+  `TrackRow.editBeatsPerBar` → `TrackDrawer.editBeatsPerBar` →
+  `PianoRollEditor.beatsPerBar`, set from the scene meter on edit-load
+  (`panelQuarterNotesPerBar`). Direct `TrackRow`/`TrackDrawer` users omit the
+  prop and keep today's 4-qn grid.
+- **`GeneratorPanelAdapter.buildSystemPrompt(validRoles, timeSignature?)`** —
+  the core now passes the scene meter to the family system prompt (incl. the
+  crossfade/fade inpaint calls); implementations may ignore the new optional
+  parameter, so existing adapters compile unchanged.
 - **`PianoRollEditor.beatsPerBar`** doc corrected: the prop is QUARTER-NOTES
   per bar (pass `parseTimeSignature(ts).quarterNotesPerBar`; fractional 3.5
   for 7/8 is safe — geometry is float-safe, no integer loops).

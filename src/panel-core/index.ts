@@ -41,8 +41,14 @@ export {
   panelMeter,
   panelClipEndSeconds,
   panelMaxBeats,
+  panelQuarterNotesPerBar,
   type PanelMeterContext,
 } from './meter';
+export {
+  buildPluginMeterGuidance,
+  formatPluginMeterGuidance,
+  type PluginMeterGuidance,
+} from './meter-prompt';
 export {
   parseTrackGroups,
   resolveTrackGroups,

@@ -33,10 +33,13 @@ export interface GeneratorTrackState {
   // Piano-roll edit state. `editNotes` is the live, editable copy of the
   // track's MIDI (loaded lazily when the Edit tab is first opened, or seeded
   // from a fresh generation). `editBars`/`editBpm` size the grid + the save
-  // span.
+  // span; `editBeatsPerBar` is the scene meter's QUARTER notes per bar
+  // (panelQuarterNotesPerBar — 4 in 4/4, fractional for odd /8 meters) and
+  // sizes the piano-roll's bar width. @since SDK 2.50.0
   editNotes: PluginMidiNote[];
   editBars: number;
   editBpm: number;
+  editBeatsPerBar: number;
   instrumentPluginId: string | null;
   instrumentName: string | null;
   instrumentMissing: boolean;
@@ -75,6 +78,7 @@ export function newTrackState(
     editNotes: [],
     editBars: 4,
     editBpm: 120,
+    editBeatsPerBar: 4,
     instrumentPluginId: handle.instrumentPluginId ?? null,
     instrumentName: handle.instrumentName ?? null,
     instrumentMissing: false,

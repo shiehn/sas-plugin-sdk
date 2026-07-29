@@ -159,6 +159,12 @@ export interface SDKTrackRowProps {
   editBars?: number;
   /** Scene BPM (piano-roll audition timing). */
   editBpm?: number;
+  /**
+   * QUARTER notes per bar for the piano-roll grid (the scene meter's
+   * `parseTimeSignature(ts).quarterNotesPerBar`; fractional for odd /8
+   * meters). Default 4 (4/4). @since SDK 2.50.0
+   */
+  editBeatsPerBar?: number;
   /** Snap step in quarter notes for the piano roll (default 0.25). */
   editSnap?: number;
   /** Optional single-note preview when the user adds a note. */
@@ -232,6 +238,7 @@ export function TrackRow({
   onNotesChange,
   editBars,
   editBpm,
+  editBeatsPerBar,
   editSnap,
   onAuditionNote,
   drag,
@@ -647,6 +654,7 @@ export function TrackRow({
             onNotesChange={onNotesChange}
             editBars={editBars}
             editBpm={editBpm}
+            editBeatsPerBar={editBeatsPerBar}
             editSnap={editSnap}
             onAuditionNote={onAuditionNote}
           />

@@ -4,7 +4,7 @@
  * absent/garbage meter) must reproduce the legacy `(bars * 4 * 60) / bpm`
  * and `bars * 4` exactly.
  */
-import { panelClipEndSeconds, panelMaxBeats, panelMeter } from '../meter';
+import { panelClipEndSeconds, panelMaxBeats, panelMeter, panelQuarterNotesPerBar } from '../meter';
 
 describe('panelMeter', () => {
   it("returns the context's parse-legal meter", () => {
@@ -43,5 +43,21 @@ describe('panelMaxBeats', () => {
   it('counts quarter notes per the meter (fractional-safe for odd /8)', () => {
     expect(panelMaxBeats({ bars: 4, bpm: 120, timeSignature: '6/8' })).toBe(12);
     expect(panelMaxBeats({ bars: 2, bpm: 120, timeSignature: '7/8' })).toBe(7);
+  });
+});
+
+describe('panelQuarterNotesPerBar', () => {
+  it('is 4 for 4/4 and meterless/garbage contexts (the legacy piano-roll grid)', () => {
+    expect(panelQuarterNotesPerBar({ timeSignature: '4/4' })).toBe(4);
+    expect(panelQuarterNotesPerBar({})).toBe(4);
+    expect(panelQuarterNotesPerBar({ timeSignature: 'waltz' })).toBe(4);
+  });
+
+  it('is the meter quarter notes per bar (fractional for odd /8)', () => {
+    expect(panelQuarterNotesPerBar({ timeSignature: '3/4' })).toBe(3);
+    expect(panelQuarterNotesPerBar({ timeSignature: '6/8' })).toBe(3);
+    expect(panelQuarterNotesPerBar({ timeSignature: '7/8' })).toBe(3.5);
+    expect(panelQuarterNotesPerBar({ timeSignature: '6/4' })).toBe(6);
+    expect(panelQuarterNotesPerBar({ timeSignature: '12/8' })).toBe(6);
   });
 });

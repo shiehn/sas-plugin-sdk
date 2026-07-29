@@ -48,3 +48,15 @@ export function panelClipEndSeconds(mc: PanelMeterContext): number {
 export function panelMaxBeats(mc: PanelMeterContext): number {
   return barsToQn(mc.bars, panelMeter(mc));
 }
+
+/**
+ * QUARTER notes per bar of the context's meter — the value the piano-roll's
+ * `beatsPerBar` prop wants (`editBeatsPerBar` in panel track state). 4/4 → 4;
+ * fractional for odd /8 meters (7/8 → 3.5), which the editor geometry
+ * handles. Malformed/absent meters degrade to 4 (today's behavior).
+ *
+ * @since SDK 2.50.0
+ */
+export function panelQuarterNotesPerBar(mc: { timeSignature?: string }): number {
+  return barsToQn(1, panelMeter(mc));
+}

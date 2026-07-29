@@ -42,7 +42,7 @@ import type { CrossfadeSelection } from '../components/CrossfadeModal';
 import type { FadeSelection } from '../components/FadeModal';
 import type { GeneratorTrackState } from './track-state';
 import type { GeneratorPanelAdapter, VerbatimFadeMember } from './adapter.types';
-import { panelClipEndSeconds, panelMaxBeats } from './meter';
+import { panelClipEndSeconds, panelMaxBeats, panelMeter } from './meter';
 
 /** A crossfade pair resolved against live track state (both members present). */
 export interface ResolvedCrossfadePair extends CrossfadePairMeta {
@@ -241,7 +241,7 @@ export function useTransitionOps({
           targetNotes: targetMidi.clips[0]?.notes ?? [],
         });
         const llm = await host.generateWithLLM({
-          system: adapter.buildSystemPrompt(host.getValidRoles()),
+          system: adapter.buildSystemPrompt(host.getValidRoles(), panelMeter(mc)),
           user: userPrompt,
           responseFormat: 'json',
         });
@@ -405,7 +405,7 @@ export function useTransitionOps({
           targetNotes: direction === 'in' ? srcNotes : [],
         });
         const llm = await host.generateWithLLM({
-          system: adapter.buildSystemPrompt(host.getValidRoles()),
+          system: adapter.buildSystemPrompt(host.getValidRoles(), panelMeter(mc)),
           user: userPrompt,
           responseFormat: 'json',
         });

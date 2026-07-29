@@ -227,6 +227,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
         onNotesChange: (notes) => handlers.notesChange(id, notes),
         editBars: track.editBars,
         editBpm: track.editBpm,
+        editBeatsPerBar: track.editBeatsPerBar,
         editSnap: 0.25,
         onAuditionNote: (pitch, vel, ms) => onAuditionNote(id, pitch, vel, ms),
       };

@@ -36,7 +36,7 @@ import type { DrawerTab } from '../components/TrackDrawer';
 import { type GeneratorTrackState, newTrackState } from './track-state';
 import { pluginFxToToggleFx, trackDataKey } from './panel-helpers';
 import { runLinkedBroadcast, type GroupBroadcastProgress } from './linked-broadcast';
-import { panelClipEndSeconds } from './meter';
+import { panelClipEndSeconds, panelQuarterNotesPerBar } from './meter';
 import {
   parseTrackGroups,
   resolveTrackGroups,
@@ -420,7 +420,13 @@ export function useGeneratorPanelCore({
           return trackStates.map((ts) => {
             const carry = prevByDbId.get(ts.handle.dbId);
             return carry
-              ? { ...ts, editNotes: carry.editNotes, editBars: carry.editBars, editBpm: carry.editBpm }
+              ? {
+                  ...ts,
+                  editNotes: carry.editNotes,
+                  editBars: carry.editBars,
+                  editBpm: carry.editBpm,
+                  editBeatsPerBar: carry.editBeatsPerBar,
+                }
               : ts;
           });
         });
@@ -1506,7 +1512,17 @@ export function useGeneratorPanelCore({
           notes = result.clips[0]?.notes ?? [];
         }
         setTracks((prev) =>
-          prev.map((t) => (t.handle.id === trackId ? { ...t, editNotes: notes, editBars: mc.bars, editBpm: mc.bpm } : t)),
+          prev.map((t) =>
+            t.handle.id === trackId
+              ? {
+                  ...t,
+                  editNotes: notes,
+                  editBars: mc.bars,
+                  editBpm: mc.bpm,
+                  editBeatsPerBar: panelQuarterNotesPerBar(mc),
+                }
+              : t,
+          ),
         );
       } catch (err: unknown) {
         console.warn(`[${logTag}] Failed to load MIDI for editing:`, err);
