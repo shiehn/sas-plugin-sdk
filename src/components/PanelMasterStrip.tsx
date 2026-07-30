@@ -12,7 +12,7 @@
  * so there is no separate "create bus" affordance to learn.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import type {
   InstrumentDescriptor,
   PanelBusFxEntry,
@@ -64,6 +64,13 @@ export interface PanelMasterStripProps {
   onToggleFxEnabled: (fxIndex: number, enabled: boolean) => void;
   /** Optional: open the FX plugin's native editor window. */
   onShowFxEditor?: (fxIndex: number) => void;
+  /**
+   * Optional: move an FX chip to another slot (drag-to-reorder). Chips are
+   * draggable only when provided (the shell gates on host support). Both
+   * args are `PanelBusFxEntry.index` values — splice semantics, the FX
+   * lands AT `toFxIndex`. @since 2.53.0
+   */
+  onMoveFx?: (fromFxIndex: number, toFxIndex: number) => void;
 
   /**
    * Sidechain (kick→bass ducking) cluster — renders ONLY when all three
@@ -92,12 +99,22 @@ export function PanelMasterStrip({
   onRemoveFx,
   onToggleFxEnabled,
   onShowFxEditor,
+  onMoveFx,
   sidechain = null,
   onSidechainAmountChange,
   onSidechainPresetChange,
 }: PanelMasterStripProps): React.ReactElement {
   const [search, setSearch] = useState('');
   const showSidechain = sidechain != null && !!onSidechainAmountChange && !!onSidechainPresetChange;
+
+  // --- Drag-to-reorder (useTrackReorder's HTML5 DnD idiom, chip-sized —
+  // the same interaction as the track drawer's 3rd-party FX chips) ---
+  const [draggingFx, setDraggingFx] = useState<number | null>(null);
+  const [dragOverFx, setDragOverFx] = useState<number | null>(null);
+  // Source chip of the in-flight drag; a ref avoids stale-closure reads in
+  // the drop handler (useTrackReorder's fromRef shape).
+  const dragFromRef = useRef<number | null>(null);
+  const canReorderFx = !!onMoveFx && !disabled && bus.fx.length > 1;
   const sidechainNoKicks = showSidechain && sidechain.amount > 0 && sidechain.kickOnsetCount === 0;
 
   const filtered = useMemo(() => {
@@ -246,12 +263,57 @@ export function PanelMasterStrip({
             <span
               key={`${fx.index}:${fx.pluginId}`}
               data-testid={`bus-fx-chip-${fx.index}`}
+              draggable={canReorderFx}
+              onDragStart={(e: React.DragEvent<HTMLSpanElement>) => {
+                if (!canReorderFx) return;
+                dragFromRef.current = fx.index;
+                setDraggingFx(fx.index);
+                if (e.dataTransfer) {
+                  e.dataTransfer.effectAllowed = 'move';
+                  // Required by Firefox to start a drag; the value is unused.
+                  try {
+                    e.dataTransfer.setData('text/plain', String(fx.index));
+                  } catch {
+                    /* some environments disallow setData — drag still works */
+                  }
+                }
+              }}
+              onDragEnd={() => {
+                dragFromRef.current = null;
+                setDraggingFx(null);
+                setDragOverFx(null);
+              }}
+              onDragEnter={(e: React.DragEvent<HTMLSpanElement>) => {
+                if (dragFromRef.current === null) return;
+                e.preventDefault();
+                setDragOverFx(fx.index);
+              }}
+              onDragOver={(e: React.DragEvent<HTMLSpanElement>) => {
+                if (dragFromRef.current === null) return;
+                e.preventDefault(); // allow drop
+                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+                setDragOverFx((cur: number | null) => (cur === fx.index ? cur : fx.index));
+              }}
+              onDragLeave={() => {
+                setDragOverFx((cur: number | null) => (cur === fx.index ? null : cur));
+              }}
+              onDrop={(e: React.DragEvent<HTMLSpanElement>) => {
+                e.preventDefault();
+                const from = dragFromRef.current;
+                dragFromRef.current = null;
+                setDraggingFx(null);
+                setDragOverFx(null);
+                if (from === null || from === fx.index || !onMoveFx) return;
+                onMoveFx(from, fx.index);
+              }}
               className={`flex items-center gap-1 px-1.5 py-0.5 rounded-sm border text-[10px] whitespace-nowrap ${
                 fx.enabled
                   ? 'border-sas-accent/60 text-sas-accent bg-sas-accent/10'
                   : 'border-sas-border text-sas-muted/50 bg-sas-panel'
-              }`}
-              title={`${fx.name}${fx.enabled ? '' : ' (bypassed)'}`}
+              }${draggingFx === fx.index ? ' opacity-50' : ''}${
+                dragOverFx === fx.index && draggingFx !== fx.index ? ' ring-1 ring-sas-accent' : ''
+              }${canReorderFx ? ' cursor-grab' : ''}`}
+              title={`${fx.name}${fx.enabled ? '' : ' (bypassed)'}${canReorderFx ? ' — drag to reorder' : ''}`}
             >
               <button
                 data-testid={`bus-fx-toggle-${fx.index}`}

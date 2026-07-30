@@ -930,6 +930,15 @@ export interface PluginHost {
   /** Bypass toggle for a bus FX by its `PanelBusFxEntry.index`. */
   setPanelBusFxEnabled?(sceneId: string, fxIndex: number, enabled: boolean): Promise<void>;
 
+  /**
+   * Move a bus FX to another slot in the chain (drag-to-reorder). Both
+   * indices are `PanelBusFxEntry.index` values; splice semantics — the FX
+   * lands AT `toFxIndex`. Volume & Pan and the bus level meter stay pinned
+   * to the chain tail. Feature-gate on
+   * `typeof host.movePanelBusFx === 'function'`. @since SDK 2.53.0
+   */
+  movePanelBusFx?(sceneId: string, fromFxIndex: number, toFxIndex: number): Promise<void>;
+
   /** Open the native editor window for a bus FX. */
   showPanelBusFxEditor?(sceneId: string, fxIndex: number): Promise<void>;
 

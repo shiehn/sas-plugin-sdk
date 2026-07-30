@@ -479,6 +479,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
                 onRemoveFx={panelBus.onRemoveFx}
                 onToggleFxEnabled={panelBus.onToggleFxEnabled}
                 onShowFxEditor={panelBus.onShowFxEditor}
+                onMoveFx={panelBus.fxReorderSupported ? panelBus.onMoveFx : undefined}
                 sidechain={
                   adapter.features.busSidechain && panelBus.sidechainSupported
                     ? panelBus.sidechain

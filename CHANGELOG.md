@@ -4,6 +4,24 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 2.53.0 — Panel-bus FX drag-to-reorder
+
+- **`PluginHost.movePanelBusFx?(sceneId, fromFxIndex, toFxIndex)`** — move a
+  bus FX to another slot in the chain. Both indices are
+  `PanelBusFxEntry.index` values; splice semantics (the FX lands AT
+  `toFxIndex`). Rides the engine's pre-existing `panelBus.reorderFx` (open
+  editors closed first; Volume & Pan + the bus level meter stay pinned to
+  the chain tail). Feature-gate on
+  `typeof host.movePanelBusFx === 'function'`.
+- **`PanelMasterStrip`**: FX chips drag-to-reorder when the new optional
+  `onMoveFx` prop is provided — the same chip-drag interaction as the track
+  drawer's 3rd-party FX (2.51.0). `usePanelBus` grows `fxReorderSupported` +
+  `onMoveFx(fromFxIndex, toFxIndex)` (optimistic local reorder, converging
+  reload); the panel-core shell wires it automatically, so panels pick this
+  up with no per-panel changes.
+- Durability: the host refreshes the per-panel bus blob after every move, so
+  the new order survives reopen and `.sasproj` import.
+
 ## 2.52.0 — Panel-bus sidechain (kick→bass ducking)
 
 - **`PluginHost.getPanelBusSidechain?(sceneId)` / `setPanelBusSidechain?(sceneId, amount, presetId)`**

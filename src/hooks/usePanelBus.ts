@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   InstrumentDescriptor,
+  PanelBusFxEntry,
   PanelBusLevels,
   PanelBusSidechainState,
   PanelBusState,
@@ -46,6 +47,11 @@ export interface UsePanelBusResult {
   onRemoveFx: (fxIndex: number) => void;
   onToggleFxEnabled: (fxIndex: number, enabled: boolean) => void;
   onShowFxEditor: (fxIndex: number) => void;
+  /** False on pre-2.53 hosts (no movePanelBusFx) — hide drag affordances. */
+  fxReorderSupported: boolean;
+  /** Move a bus FX to another slot; both args are `PanelBusFxEntry.index`
+   *  values (splice semantics — the FX lands AT `toFxIndex`). @since 2.53.0 */
+  onMoveFx: (fromFxIndex: number, toFxIndex: number) => void;
   /**
    * Sidechain (kick→bass ducking) state — null until loaded or on hosts
    * without the surface (pre-2.52). @since 2.52.0
@@ -62,6 +68,7 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
   const supported = typeof host.getPanelBusState === 'function';
   const sidechainSupported =
     typeof host.getPanelBusSidechain === 'function' && typeof host.setPanelBusSidechain === 'function';
+  const fxReorderSupported = supported && typeof host.movePanelBusFx === 'function';
   const [bus, setBus] = useState<PanelBusState | null>(null);
   const [levels, setLevels] = useState<PanelBusLevels | null>(null);
   const [sidechain, setSidechain] = useState<PanelBusSidechainState | null>(null);
@@ -236,6 +243,24 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
       mutate(
         host.showPanelBusFxEditor && (() => host.showPanelBusFxEditor!(activeSceneId!, fxIndex))
       ),
+    fxReorderSupported,
+    onMoveFx: (fromFxIndex: number, toFxIndex: number) => {
+      if (!host.movePanelBusFx || !activeSceneId || fromFxIndex === toFxIndex) return;
+      // Optimistic: land the chip in its new slot immediately; the
+      // post-mutation reload converges to engine truth (and IS the rollback
+      // when the host call fails).
+      setBus((prev: PanelBusState | null) => {
+        if (!prev) return prev;
+        const from = prev.fx.findIndex((f: PanelBusFxEntry) => f.index === fromFxIndex);
+        const to = prev.fx.findIndex((f: PanelBusFxEntry) => f.index === toFxIndex);
+        if (from < 0 || to < 0) return prev;
+        const fx = [...prev.fx];
+        const [moving] = fx.splice(from, 1);
+        fx.splice(to, 0, moving);
+        return { ...prev, fx };
+      });
+      mutate(() => host.movePanelBusFx!(activeSceneId, fromFxIndex, toFxIndex));
+    },
     sidechain,
     sidechainSupported,
     onSidechainAmountChange: (amount: number) => {
