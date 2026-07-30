@@ -13,7 +13,7 @@
  * TrackDrawer Pick-tab grid over FX descriptors with a search box.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import type { InstrumentDescriptor, PluginHost, TrackExternalFxEntry } from '../types/plugin-sdk.types';
 import { useTrackExternalFx } from '../hooks/useTrackExternalFx';
 
@@ -33,6 +33,7 @@ export function TrackExternalFxSection({
 }: TrackExternalFxSectionProps): React.ReactElement | null {
   const {
     supported,
+    reorderSupported,
     fx,
     availableFx,
     fxLoading,
@@ -41,10 +42,18 @@ export function TrackExternalFxSection({
     refreshFx,
     onAddFx,
     onRemoveFx,
+    onMoveFx,
     onToggleFxEnabled,
     onShowFxEditor,
   } = useTrackExternalFx(host, trackId);
   const [search, setSearch] = useState('');
+
+  // --- Drag-to-reorder (useTrackReorder's HTML5 DnD idiom, chip-sized) ---
+  const [draggingFx, setDraggingFx] = useState<number | null>(null);
+  const [dragOverFx, setDragOverFx] = useState<number | null>(null);
+  // Source chip of the in-flight drag; a ref avoids stale-closure reads in
+  // the drop handler (useTrackReorder's fromRef shape).
+  const dragFromRef = useRef<number | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -60,6 +69,7 @@ export function TrackExternalFxSection({
   if (!supported) return null;
 
   const entries = fx ?? [];
+  const canReorder = reorderSupported && !disabled && entries.length > 1;
 
   return (
     <div
@@ -80,12 +90,57 @@ export function TrackExternalFxSection({
             <span
               key={`${entry.index}:${entry.pluginId}`}
               data-testid={`track-fx-chip-${entry.index}`}
+              draggable={canReorder}
+              onDragStart={(e: React.DragEvent<HTMLSpanElement>) => {
+                if (!canReorder) return;
+                dragFromRef.current = entry.index;
+                setDraggingFx(entry.index);
+                if (e.dataTransfer) {
+                  e.dataTransfer.effectAllowed = 'move';
+                  // Required by Firefox to start a drag; the value is unused.
+                  try {
+                    e.dataTransfer.setData('text/plain', String(entry.index));
+                  } catch {
+                    /* some environments disallow setData — drag still works */
+                  }
+                }
+              }}
+              onDragEnd={() => {
+                dragFromRef.current = null;
+                setDraggingFx(null);
+                setDragOverFx(null);
+              }}
+              onDragEnter={(e: React.DragEvent<HTMLSpanElement>) => {
+                if (dragFromRef.current === null) return;
+                e.preventDefault();
+                setDragOverFx(entry.index);
+              }}
+              onDragOver={(e: React.DragEvent<HTMLSpanElement>) => {
+                if (dragFromRef.current === null) return;
+                e.preventDefault(); // allow drop
+                if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+                setDragOverFx((cur: number | null) => (cur === entry.index ? cur : entry.index));
+              }}
+              onDragLeave={() => {
+                setDragOverFx((cur: number | null) => (cur === entry.index ? null : cur));
+              }}
+              onDrop={(e: React.DragEvent<HTMLSpanElement>) => {
+                e.preventDefault();
+                const from = dragFromRef.current;
+                dragFromRef.current = null;
+                setDraggingFx(null);
+                setDragOverFx(null);
+                if (from === null || from === entry.index) return;
+                onMoveFx(from, entry.index);
+              }}
               className={`flex items-center gap-1 px-1.5 py-0.5 rounded-sm border text-[10px] whitespace-nowrap ${
                 entry.enabled
                   ? 'border-sas-accent/60 text-sas-accent bg-sas-accent/10'
                   : 'border-sas-border text-sas-muted/50 bg-sas-panel'
-              }`}
-              title={`${entry.name}${entry.enabled ? '' : ' (bypassed)'}`}
+              }${draggingFx === entry.index ? ' opacity-50' : ''}${
+                dragOverFx === entry.index && draggingFx !== entry.index ? ' ring-1 ring-sas-accent' : ''
+              }${canReorder ? ' cursor-grab' : ''}`}
+              title={`${entry.name}${entry.enabled ? '' : ' (bypassed)'}${canReorder ? ' — drag to reorder' : ''}`}
             >
               <button
                 data-testid={`track-fx-toggle-${entry.index}`}

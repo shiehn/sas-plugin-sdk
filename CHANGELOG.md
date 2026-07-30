@@ -4,6 +4,42 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 2.52.0 — Panel-bus sidechain (kick→bass ducking)
+
+- **`PluginHost.getPanelBusSidechain?(sceneId)` / `setPanelBusSidechain?(sceneId, amount, presetId)`**
+  — the bus's "Duck" control: `amount` 0..1 (0 = off) + preset curve
+  (`'subtle' | 'classic' | 'hard'`). The duck envelope is derived host-side
+  from the scene's **kick MIDI onsets** (Kickstart-style gain shaping, not a
+  compressor): muting kicks never breaks the pump, bounces bake it in, and
+  new/regenerated kicks reshape it automatically. Reading state never engages
+  the bus; the first `set` does. New type: **`PanelBusSidechainState`**
+  (`engaged`, `amount`, `presetId`, `kickTrackCount`, `kickOnsetCount`).
+- **`PanelMasterStrip`**: optional DUCK cluster (amount slider + preset
+  select + "no kicks" hint), rendered only when the new `sidechain` props are
+  provided. `usePanelBus` grows `sidechain`, `sidechainSupported`,
+  `onSidechainAmountChange` (150 ms drag debounce, local echo) and
+  `onSidechainPresetChange`.
+- **`PanelFeatureFlags.busSidechain?`** — per-family opt-in; the shell
+  additionally gates on host support, so the flag is inert on pre-2.52 hosts.
+  The bass panel ships it first.
+
+## 2.51.0 — Track external FX drag-to-reorder
+
+- **`PluginHost.moveTrackExternalFx?(trackId, fromFxIndex, toFxIndex)`** —
+  move a third-party insert to another slot in the track's chain. Both
+  indices are `TrackExternalFxEntry.index` values; splice semantics (the FX
+  lands AT `toFxIndex`). Only external inserts are movable or valid landing
+  slots — never the instrument or built-ins; the engine additionally pins
+  Volume & Pan to the chain tail and closes the track's open plugin editors
+  before the move. Feature-gate on
+  `typeof host.moveTrackExternalFx === 'function'`.
+- **`TrackExternalFxSection`**: FX chips drag-to-reorder when the host
+  supports the method (optimistic local reorder, converging reload —
+  `useTrackReorder`'s HTML5 DnD idiom at chip size). `useTrackExternalFx`
+  grows `reorderSupported` + `onMoveFx(fromFxIndex, toFxIndex)`.
+- Durability: the host refreshes the per-track external-FX blob after every
+  move, so the new order survives reopen and `.sasproj` import.
+
 ## 2.50.0 — Time signatures (types + utils; still dark)
 
 - **`utils/time-signature.ts`** (new, exported from the root): meter parsing +

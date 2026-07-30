@@ -13,10 +13,22 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import type { InstrumentDescriptor, PanelBusFxEntry, PanelBusLevels, PanelBusState } from '../types/plugin-sdk.types';
+import type {
+  InstrumentDescriptor,
+  PanelBusFxEntry,
+  PanelBusLevels,
+  PanelBusSidechainState,
+  PanelBusState,
+} from '../types/plugin-sdk.types';
 import { LevelMeter } from './LevelMeter';
 import { VolumeSlider } from './VolumeSlider';
 import { dbToSlider, sliderToDb } from '../utils/volume-conversion';
+
+const SIDECHAIN_PRESETS: ReadonlyArray<{ id: PanelBusSidechainState['presetId']; label: string }> = [
+  { id: 'subtle', label: 'Subtle' },
+  { id: 'classic', label: 'Classic' },
+  { id: 'hard', label: 'Hard' },
+];
 
 export interface PanelMasterStripProps {
   /** Bus state from `host.getPanelBusState(sceneId)`. */
@@ -52,6 +64,15 @@ export interface PanelMasterStripProps {
   onToggleFxEnabled: (fxIndex: number, enabled: boolean) => void;
   /** Optional: open the FX plugin's native editor window. */
   onShowFxEditor?: (fxIndex: number) => void;
+
+  /**
+   * Sidechain (kick→bass ducking) cluster — renders ONLY when all three
+   * props are provided (panels opt in via `features.busSidechain`; the shell
+   * additionally gates on host support). @since 2.52.0
+   */
+  sidechain?: PanelBusSidechainState | null;
+  onSidechainAmountChange?: (amount: number) => void;
+  onSidechainPresetChange?: (presetId: PanelBusSidechainState['presetId']) => void;
 }
 
 export function PanelMasterStrip({
@@ -71,8 +92,13 @@ export function PanelMasterStrip({
   onRemoveFx,
   onToggleFxEnabled,
   onShowFxEditor,
+  sidechain = null,
+  onSidechainAmountChange,
+  onSidechainPresetChange,
 }: PanelMasterStripProps): React.ReactElement {
   const [search, setSearch] = useState('');
+  const showSidechain = sidechain != null && !!onSidechainAmountChange && !!onSidechainPresetChange;
+  const sidechainNoKicks = showSidechain && sidechain.amount > 0 && sidechain.kickOnsetCount === 0;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -146,6 +172,73 @@ export function PanelMasterStrip({
         >
           S
         </button>
+
+        {/* Sidechain (kick→bass ducking): amount + preset. The envelope
+            follows the scene's kick MIDI — no kicks, no pump. */}
+        {showSidechain && (
+          <div
+            data-testid="bus-sidechain"
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-sm border whitespace-nowrap ${
+              sidechain.amount > 0
+                ? 'border-sas-accent/60 bg-sas-accent/10'
+                : 'border-sas-border bg-sas-panel'
+            }`}
+            title={
+              sidechainNoKicks
+                ? 'No kicks in this scene — the duck is armed but has nothing to pump against'
+                : 'Sidechain duck: this bus dips on every kick in the scene (0 = off)'
+            }
+          >
+            <span
+              className={`text-[9px] font-bold tracking-widest select-none ${
+                sidechain.amount > 0 ? 'text-sas-accent' : 'text-sas-muted/70'
+              }`}
+            >
+              DUCK
+            </span>
+            <input
+              data-testid="bus-sidechain-amount"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(sidechain.amount * 100)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                onSidechainAmountChange(Number(e.target.value) / 100)
+              }
+              disabled={disabled}
+              className="w-16 accent-sas-accent disabled:opacity-50"
+              aria-label="Sidechain duck amount"
+            />
+            <span className="text-[9px] text-sas-muted/70 w-6 text-right select-none" data-testid="bus-sidechain-amount-label">
+              {sidechain.amount > 0 ? `${Math.round(sidechain.amount * 100)}%` : 'Off'}
+            </span>
+            <select
+              data-testid="bus-sidechain-preset"
+              value={sidechain.presetId}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                onSidechainPresetChange(e.target.value as PanelBusSidechainState['presetId'])
+              }
+              disabled={disabled}
+              className="sas-input text-[10px] px-1 py-0.5"
+              aria-label="Sidechain duck preset"
+            >
+              {SIDECHAIN_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+            {sidechainNoKicks && (
+              <span
+                data-testid="bus-sidechain-no-kicks"
+                className="text-[10px] text-amber-500 select-none"
+              >
+                no kicks
+              </span>
+            )}
+          </div>
+        )}
 
         {/* FX chips */}
         <div className="flex items-center gap-1 max-w-[45%] min-w-0 overflow-x-auto">

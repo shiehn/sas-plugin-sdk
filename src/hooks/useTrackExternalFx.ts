@@ -24,6 +24,8 @@ import type {
 export interface UseTrackExternalFxResult {
   /** False on pre-2.39 hosts — render no section. */
   supported: boolean;
+  /** False on pre-2.51 hosts (no moveTrackExternalFx) — hide drag affordances. */
+  reorderSupported: boolean;
   /** Null until the first load completes for the current track. */
   fx: TrackExternalFxEntry[] | null;
   availableFx: InstrumentDescriptor[];
@@ -34,12 +36,16 @@ export interface UseTrackExternalFxResult {
   reload: () => Promise<void>;
   onAddFx: (pluginId: string) => void;
   onRemoveFx: (fxIndex: number) => void;
+  /** Move an FX to another slot; both args are `TrackExternalFxEntry.index`
+   *  values (splice semantics — the FX lands AT `toFxIndex`). */
+  onMoveFx: (fromFxIndex: number, toFxIndex: number) => void;
   onToggleFxEnabled: (fxIndex: number, enabled: boolean) => void;
   onShowFxEditor: (fxIndex: number) => void;
 }
 
 export function useTrackExternalFx(host: PluginHost, trackId: string): UseTrackExternalFxResult {
   const supported = typeof host.getTrackExternalFx === 'function';
+  const reorderSupported = supported && typeof host.moveTrackExternalFx === 'function';
   const [fx, setFx] = useState<TrackExternalFxEntry[] | null>(null);
   const [availableFx, setAvailableFx] = useState<InstrumentDescriptor[]>([]);
   const [fxLoading, setFxLoading] = useState(false);
@@ -121,6 +127,7 @@ export function useTrackExternalFx(host: PluginHost, trackId: string): UseTrackE
 
   return {
     supported,
+    reorderSupported,
     fx,
     availableFx,
     fxLoading,
@@ -134,6 +141,23 @@ export function useTrackExternalFx(host: PluginHost, trackId: string): UseTrackE
       })),
     onRemoveFx: (fxIndex: number) =>
       mutate(host.removeTrackExternalFx && (() => host.removeTrackExternalFx!(trackId, fxIndex))),
+    onMoveFx: (fromFxIndex: number, toFxIndex: number) => {
+      if (!host.moveTrackExternalFx || !trackId || fromFxIndex === toFxIndex) return;
+      // Optimistic: land the chip in its new slot immediately; the
+      // post-mutation reload converges to engine truth (and IS the rollback
+      // when the host call fails).
+      setFx((prev: TrackExternalFxEntry[] | null) => {
+        if (!prev) return prev;
+        const from = prev.findIndex((e: TrackExternalFxEntry) => e.index === fromFxIndex);
+        const to = prev.findIndex((e: TrackExternalFxEntry) => e.index === toFxIndex);
+        if (from < 0 || to < 0) return prev;
+        const next = [...prev];
+        const [moving] = next.splice(from, 1);
+        next.splice(to, 0, moving);
+        return next;
+      });
+      mutate(() => host.moveTrackExternalFx!(trackId, fromFxIndex, toFxIndex));
+    },
     onToggleFxEnabled: (fxIndex: number, enabled: boolean) =>
       mutate(
         host.setTrackExternalFxEnabled &&

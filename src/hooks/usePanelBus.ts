@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   InstrumentDescriptor,
   PanelBusLevels,
+  PanelBusSidechainState,
   PanelBusState,
   PluginHost,
 } from '../types/plugin-sdk.types';
@@ -45,12 +46,25 @@ export interface UsePanelBusResult {
   onRemoveFx: (fxIndex: number) => void;
   onToggleFxEnabled: (fxIndex: number, enabled: boolean) => void;
   onShowFxEditor: (fxIndex: number) => void;
+  /**
+   * Sidechain (kick→bass ducking) state — null until loaded or on hosts
+   * without the surface (pre-2.52). @since 2.52.0
+   */
+  sidechain: PanelBusSidechainState | null;
+  /** False on pre-2.52 hosts — render no Duck control. */
+  sidechainSupported: boolean;
+  /** Debounced while dragging (~150 ms); local state echoes immediately. */
+  onSidechainAmountChange: (amount: number) => void;
+  onSidechainPresetChange: (presetId: PanelBusSidechainState['presetId']) => void;
 }
 
 export function usePanelBus(host: PluginHost, activeSceneId: string | null): UsePanelBusResult {
   const supported = typeof host.getPanelBusState === 'function';
+  const sidechainSupported =
+    typeof host.getPanelBusSidechain === 'function' && typeof host.setPanelBusSidechain === 'function';
   const [bus, setBus] = useState<PanelBusState | null>(null);
   const [levels, setLevels] = useState<PanelBusLevels | null>(null);
+  const [sidechain, setSidechain] = useState<PanelBusSidechainState | null>(null);
   const [availableFx, setAvailableFx] = useState<InstrumentDescriptor[]>([]);
   const [fxLoading, setFxLoading] = useState(false);
   const [fxPickerOpen, setFxPickerOpen] = useState(false);
@@ -58,6 +72,8 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
   // Stale-scene guard: a slow read for the PREVIOUS scene must not clobber
   // the current scene's state (same shape as the panels' loadTracks guard).
   const loadSeqRef = useRef(0);
+  const sidechainSeqRef = useRef(0);
+  const sidechainDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reload = useCallback(async (): Promise<void> => {
     if (!supported || !activeSceneId || !host.getPanelBusState) {
@@ -74,11 +90,39 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
     }
   }, [host, activeSceneId, supported]);
 
+  const reloadSidechain = useCallback(async (): Promise<void> => {
+    if (!sidechainSupported || !activeSceneId || !host.getPanelBusSidechain) {
+      setSidechain(null);
+      return;
+    }
+    const seq = ++sidechainSeqRef.current;
+    try {
+      const state = await host.getPanelBusSidechain(activeSceneId);
+      if (sidechainSeqRef.current === seq) setSidechain(state);
+    } catch {
+      // Cheap blob read — a hiccup just leaves the prior state; the next
+      // scene change or knob touch converges.
+    }
+  }, [host, activeSceneId, sidechainSupported]);
+
   useEffect(() => {
     setBus(null);
     setFxPickerOpen(false);
+    setSidechain(null);
     void reload();
-  }, [reload]);
+    void reloadSidechain();
+  }, [reload, reloadSidechain]);
+
+  // Flush guard: never leave a pending debounced amount pointing at a stale
+  // scene or an unmounted panel.
+  useEffect(() => {
+    return () => {
+      if (sidechainDebounceRef.current) {
+        clearTimeout(sidechainDebounceRef.current);
+        sidechainDebounceRef.current = null;
+      }
+    };
+  }, [activeSceneId]);
 
   // Meter poll: only while the bus is engaged (and the tab visible). Errors
   // and unrealized states floor the meter rather than surfacing.
@@ -192,5 +236,43 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
       mutate(
         host.showPanelBusFxEditor && (() => host.showPanelBusFxEditor!(activeSceneId!, fxIndex))
       ),
+    sidechain,
+    sidechainSupported,
+    onSidechainAmountChange: (amount: number) => {
+      if (!sidechainSupported || !activeSceneId || !host.setPanelBusSidechain) return;
+      const clamped = Math.max(0, Math.min(1, amount));
+      const presetId = sidechain?.presetId ?? 'classic';
+      // Local echo so the knob tracks the drag; the host write debounces.
+      setSidechain((prev) =>
+        prev
+          ? { ...prev, amount: clamped, engaged: true }
+          : { engaged: true, amount: clamped, presetId, kickTrackCount: 0, kickOnsetCount: 0 }
+      );
+      if (sidechainDebounceRef.current) clearTimeout(sidechainDebounceRef.current);
+      sidechainDebounceRef.current = setTimeout(() => {
+        sidechainDebounceRef.current = null;
+        void (async () => {
+          try {
+            await host.setPanelBusSidechain!(activeSceneId, clamped, presetId);
+          } catch {
+            // surfaced by the host layer; reload below converges
+          }
+          await reloadSidechain();
+        })();
+      }, 150);
+    },
+    onSidechainPresetChange: (presetId: PanelBusSidechainState['presetId']) => {
+      if (!sidechainSupported || !activeSceneId || !host.setPanelBusSidechain) return;
+      const amount = sidechain?.amount ?? 0;
+      setSidechain((prev) => (prev ? { ...prev, presetId, engaged: true } : prev));
+      void (async () => {
+        try {
+          await host.setPanelBusSidechain!(activeSceneId, amount, presetId);
+        } catch {
+          // surfaced by the host layer; reload below converges
+        }
+        await reloadSidechain();
+      })();
+    },
   };
 }

@@ -231,6 +231,24 @@ export interface PanelBusLevels {
   clipped: boolean;
 }
 
+/**
+ * The panel bus's sidechain (kick→bass ducking) state — the "Duck" control's
+ * model. The duck envelope is derived from the scene's kick MIDI onsets
+ * (mute-independent, auto-follows new/regenerated kicks); the user's only
+ * inputs are `amount` and `presetId`. @since SDK 2.52.0
+ */
+export interface PanelBusSidechainState {
+  /** True once the user has touched the control (config persisted). */
+  engaged: boolean;
+  /** 0..1, 0 = off. */
+  amount: number;
+  presetId: 'subtle' | 'classic' | 'hard';
+  /** Trigger tracks found in the scene (the "no kicks" hint when 0). */
+  kickTrackCount: number;
+  /** Distinct kick onsets driving the pump. */
+  kickOnsetCount: number;
+}
+
 /** Every generator plugin must implement this interface. */
 export interface GeneratorPlugin {
   /** Unique ID, npm-style scope: '@sas/synth-generator', '@user/my-plugin' */
@@ -921,6 +939,24 @@ export interface PluginHost {
    */
   disengagePanelBus?(sceneId: string): Promise<void>;
 
+  /**
+   * Sidechain (kick→bass ducking) state for the bus. Cheap read: persisted
+   * config + a kick census; never engages the bus. @since SDK 2.52.0
+   */
+  getPanelBusSidechain?(sceneId: string): Promise<PanelBusSidechainState>;
+
+  /**
+   * Set the bus's sidechain: `amount` 0..1 (0 = off) and a preset curve.
+   * Engages the bus on first touch; the duck envelope is derived from the
+   * scene's current kick MIDI and re-derives automatically as kicks change.
+   * @since SDK 2.52.0
+   */
+  setPanelBusSidechain?(
+    sceneId: string,
+    amount: number,
+    presetId: 'subtle' | 'classic' | 'hard'
+  ): Promise<void>;
+
   // -------------------------------------------------------------------------
   // Track external FX (third-party VST3/AU inserts on ONE track) — the track
   // analogue of the panel-bus FX chain. The built-in FX toggles
@@ -951,6 +987,15 @@ export interface PluginHost {
 
   /** Bypass toggle for an external FX by its `TrackExternalFxEntry.index`. */
   setTrackExternalFxEnabled?(trackId: string, fxIndex: number, enabled: boolean): Promise<void>;
+
+  /**
+   * Move an external FX to another slot in the chain (drag-to-reorder).
+   * Both indices are `TrackExternalFxEntry.index` values; splice semantics —
+   * the FX lands AT `toFxIndex`. Only external inserts are movable or valid
+   * landing slots (never the instrument or built-ins). Feature-gate on
+   * `typeof host.moveTrackExternalFx === 'function'`. @since SDK 2.51.0
+   */
+  moveTrackExternalFx?(trackId: string, fromFxIndex: number, toFxIndex: number): Promise<void>;
 
   /** Open the native editor window for an external FX. */
   showTrackExternalFxEditor?(trackId: string, fxIndex: number): Promise<void>;

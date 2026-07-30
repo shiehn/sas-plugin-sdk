@@ -479,6 +479,21 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
                 onRemoveFx={panelBus.onRemoveFx}
                 onToggleFxEnabled={panelBus.onToggleFxEnabled}
                 onShowFxEditor={panelBus.onShowFxEditor}
+                sidechain={
+                  adapter.features.busSidechain && panelBus.sidechainSupported
+                    ? panelBus.sidechain
+                    : null
+                }
+                onSidechainAmountChange={
+                  adapter.features.busSidechain && panelBus.sidechainSupported
+                    ? panelBus.onSidechainAmountChange
+                    : undefined
+                }
+                onSidechainPresetChange={
+                  adapter.features.busSidechain && panelBus.sidechainSupported
+                    ? panelBus.onSidechainPresetChange
+                    : undefined
+                }
               />
             )}
             {slots?.beforeRows}

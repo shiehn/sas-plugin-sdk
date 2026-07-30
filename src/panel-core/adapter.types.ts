@@ -92,6 +92,13 @@ export interface PanelFeatureFlags {
   transitionDesigner: boolean;
   /** ImportTrackModal + port-track flow + sound-import drawer action (synth: true). */
   importTracks: boolean;
+  /**
+   * Sidechain (kick→bass ducking) cluster on the bus strip — the panel's
+   * summed output dips on every kick in the scene. Opt-in per family (bass
+   * ships it first); the shell additionally gates on host support, so the
+   * flag is inert on pre-2.52 hosts. @since 2.52.0
+   */
+  busSidechain?: boolean;
 }
 
 // ============================================================================

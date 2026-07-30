@@ -15,6 +15,7 @@ export type {
   PanelBusState,
   PanelBusFxEntry,
   PanelBusLevels,
+  PanelBusSidechainState,
   TrackExternalFxEntry,
   TrackFreezeState,
   FreezeDep,
