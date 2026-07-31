@@ -243,11 +243,55 @@ export interface PanelBusSidechainState {
   /** 0..1, 0 = off. */
   amount: number;
   presetId: 'subtle' | 'classic' | 'hard';
-  /** Trigger tracks found in the scene (the "no kicks" hint when 0). */
+  /** Onset source: real kick MIDI (default), or a synthetic ghost grid for
+   *  kick-free pumping. @since SDK 2.54.0 */
+  source: 'kicks' | 'four-floor' | 'eighths';
+  /** Trigger tracks found in the scene (the "no kicks" hint when 0 and
+   *  source is 'kicks'). */
   kickTrackCount: number;
   /** Distinct kick onsets driving the pump. */
   kickOnsetCount: number;
 }
+
+/**
+ * The panel bus's motion (tempo-locked filter wobble/sweep) state — the
+ * "Motion" control's model. The motion envelope is rendered per-sample in
+ * the engine against the scene's tempo/meter (identical live and in
+ * bounces); the scene's bar length and loop span are derived host-side and
+ * re-push automatically when scene bars or meter change. @since SDK 2.54.0
+ */
+export interface PanelBusMotionState {
+  /** True once the user has touched the control (config persisted). */
+  engaged: boolean;
+  /** 0..1 motion depth, 0 = off. */
+  amount: number;
+  /** 'filter' drives the cutoff; 'amp' drives GAIN (trance gate / level
+   *  ride, no filter in circuit). @since SDK 2.54.0 */
+  target: 'filter' | 'amp';
+  mode: 'lfo' | 'sweep';
+  filter: 'lp' | 'hp' | 'bp';
+  /** LFO waveform — every shape starts OPEN at the cycle boundary. */
+  shape: 'sine' | 'triangle' | 'saw' | 'square';
+  /** LFO period in quarter-notes (1 = 1/4-note wobble, 0.5 = 1/8, 1/3 = 1/8T). */
+  rateQn: number;
+  /** Per-bar periods (qn); empty = single rateQn. Phase restarts each bar. */
+  patternQn: number[];
+  /** Cycle phase offset, fraction of a cycle. */
+  phase01: number;
+  /** LFO fully-open cutoff (Hz). */
+  baseHz: number;
+  /** LFO octave span below baseHz at amount = 1. */
+  depthOct: number;
+  /** 0..1 -> filter Q 0.707..~8. */
+  resonance01: number;
+  sweepFromHz: number;
+  sweepToHz: number;
+  sweepCurve: 'lin' | 'exp';
+}
+
+/** Partial update for setPanelBusMotion — merge semantics, so a debounced
+ *  amount slider can send `{ amount }` alone. @since SDK 2.54.0 */
+export type PanelBusMotionUpdate = Partial<Omit<PanelBusMotionState, 'engaged'>>;
 
 /** Every generator plugin must implement this interface. */
 export interface GeneratorPlugin {
@@ -963,8 +1007,24 @@ export interface PluginHost {
   setPanelBusSidechain?(
     sceneId: string,
     amount: number,
-    presetId: 'subtle' | 'classic' | 'hard'
+    presetId: 'subtle' | 'classic' | 'hard',
+    source?: 'kicks' | 'four-floor' | 'eighths'
   ): Promise<void>;
+
+  /**
+   * Motion (tempo-locked filter wobble/sweep) state for the bus. Cheap read:
+   * persisted config only; never engages the bus. @since SDK 2.54.0
+   */
+  getPanelBusMotion?(sceneId: string): Promise<PanelBusMotionState>;
+
+  /**
+   * Update the bus's motion config (merge semantics — send only the fields
+   * that changed). Engages the bus on first touch; the engine renders the
+   * envelope per-sample against the scene's tempo, and scene bars/meter
+   * re-derive automatically on change. Panels MUST feature-gate on
+   * `typeof host.setPanelBusMotion === 'function'`. @since SDK 2.54.0
+   */
+  setPanelBusMotion?(sceneId: string, update: PanelBusMotionUpdate): Promise<void>;
 
   // -------------------------------------------------------------------------
   // Track external FX (third-party VST3/AU inserts on ONE track) — the track
@@ -1498,11 +1558,23 @@ export interface PluginHost {
   /**
    * Render an audio transition effect onto a sample (offline DSP via the audio
    * tool), returning a NEW library sample to place. Used for stutter / chopped
-   * loop transitions. @since SDK 2.32.0
+   * loop transitions; `filter` (SDK 2.54.0) bakes a click-free cutoff sweep
+   * (defaults: highpass 20 → 2400 Hz). @since SDK 2.32.0
    */
   renderSampleEffect?(
     sampleId: string,
-    spec: { effect: 'stutter' | 'chopped'; bars: number; bpm: number; repeats?: number; slices?: number },
+    spec: {
+      effect: 'stutter' | 'chopped' | 'filter' | 'tape-stop';
+      bars: number;
+      bpm: number;
+      repeats?: number;
+      slices?: number;
+      filterType?: 'highpass' | 'lowpass';
+      startHz?: number;
+      endHz?: number;
+      tapeDirection?: 'stop' | 'start';
+      tapeSpanSeconds?: number;
+    },
   ): Promise<PluginSampleInfo>;
 
   /** Time-stretch a sample to a target BPM. Returns the new sample info. */
@@ -2064,6 +2136,14 @@ export interface PluginMidiNote {
   velocity: number;
   /** MIDI channel 0-15 (default: 0) */
   channel?: number;
+  /**
+   * 303-style slide: this note deliberately rings into the NEXT note (legato
+   * overlap — mono/portamento synths glide between the pitches). Honored by
+   * postProcessMidi's overlap removal, which preserves the overlap instead of
+   * trimming it. Generation metadata only: the overlap itself is what reaches
+   * the engine; the flag is not persisted. @since SDK 2.54.0
+   */
+  slide?: boolean;
 }
 
 export interface MidiWriteResult {
@@ -2161,7 +2241,9 @@ export interface PostProcessOptions {
   enforceScale?: boolean;
   /** Clamp notes to pitch range [low, high] */
   clampRegister?: [number, number];
-  /** Remove overlapping notes on same pitch/channel (default: true) */
+  /** Remove overlapping notes on the same channel (default: true). Notes
+   *  flagged `slide: true` keep their overlap onto a DIFFERENT next pitch —
+   *  the 303 legato glide. @see PluginMidiNote.slide */
   removeOverlaps?: boolean;
 }
 

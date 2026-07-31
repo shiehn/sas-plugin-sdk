@@ -105,7 +105,7 @@ export interface TransitionDesignerProps {
   onCreateAudioTransition?: (
     selection: FadeSelection,
     direction: FadeDirection,
-    effect: 'stutter' | 'chopped' | 'delay',
+    effect: 'stutter' | 'chopped' | 'delay' | 'filter' | 'tape-stop',
   ) => Promise<void>;
   /** Short family label for the heading, e.g. "Synths". */
   familyLabel?: string;

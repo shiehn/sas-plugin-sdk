@@ -99,6 +99,14 @@ export interface PanelFeatureFlags {
    * flag is inert on pre-2.52 hosts. @since 2.52.0
    */
   busSidechain?: boolean;
+  /**
+   * Motion (tempo-locked filter wobble) cluster on the bus strip — a
+   * per-sample filter LFO/sweep on the panel's summed output (dubstep
+   * wobble, gate chops, build sweeps). Opt-in per family (bass ships it
+   * first); the shell additionally gates on host support, so the flag is
+   * inert on pre-2.54 hosts. @since 2.54.0
+   */
+  busMotion?: boolean;
 }
 
 // ============================================================================

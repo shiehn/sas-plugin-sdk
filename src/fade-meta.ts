@@ -39,10 +39,11 @@ export interface FadeMeta {
   /**
    * Audio transition variant for one-sided LOOP transitions. `'fade'` (default,
    * and the only value MIDI panels write) is a plain level ramp; `stutter` /
-   * `chopped` re-render the loop's audio, `delay` adds a delay-throw FX. Shown as
+   * `chopped` re-render the loop's audio, `delay` adds a delay-throw FX, `filter`
+   * bakes a direction-tied highpass sweep. Shown as
    * a badge on the row. @since SDK 2.32.0
    */
-  effect?: 'fade' | 'stutter' | 'chopped' | 'delay';
+  effect?: 'fade' | 'stutter' | 'chopped' | 'delay' | 'filter' | 'tape-stop';
   /** DB id of the SOURCE track this fade's preset/sample + pattern was seeded from. */
   sourceTrackDbId: string;
   /** DB id of the scene the source track lives in (the from/to scene). */
@@ -80,7 +81,7 @@ export function asFadeMeta(val: unknown): FadeMeta | null {
   if (m.direction !== 'in' && m.direction !== 'out') return null;
   if (m.gesture !== 'volume' && m.gesture !== 'build') return null;
   const effect =
-    m.effect === 'stutter' || m.effect === 'chopped' || m.effect === 'delay' || m.effect === 'fade'
+    m.effect === 'stutter' || m.effect === 'chopped' || m.effect === 'delay' || m.effect === 'filter' || m.effect === 'tape-stop' || m.effect === 'fade'
       ? m.effect
       : undefined;
   return {

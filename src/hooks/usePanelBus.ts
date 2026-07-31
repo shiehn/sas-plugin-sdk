@@ -18,6 +18,7 @@ import type {
   InstrumentDescriptor,
   PanelBusFxEntry,
   PanelBusLevels,
+  PanelBusMotionState,
   PanelBusSidechainState,
   PanelBusState,
   PluginHost,
@@ -62,16 +63,36 @@ export interface UsePanelBusResult {
   /** Debounced while dragging (~150 ms); local state echoes immediately. */
   onSidechainAmountChange: (amount: number) => void;
   onSidechainPresetChange: (presetId: PanelBusSidechainState['presetId']) => void;
+  /** Switch the duck's onset source (kicks | ghost grids). @since 2.54.0 */
+  onSidechainSourceChange: (source: PanelBusSidechainState['source']) => void;
+  /**
+   * Motion (tempo-locked filter wobble) state — null until loaded or on
+   * hosts without the surface (pre-2.54). @since 2.54.0
+   */
+  motion: PanelBusMotionState | null;
+  /** False on pre-2.54 hosts — render no Motion control. */
+  motionSupported: boolean;
+  /** Debounced while dragging (~150 ms); local state echoes immediately. */
+  onMotionAmountChange: (amount: number) => void;
+  /** Set the LFO period (quarter-notes). Clears any per-bar pattern —
+   *  patterns are agent/tool territory; the strip drives a single rate. */
+  onMotionRateChange: (rateQn: number) => void;
+  onMotionShapeChange: (shape: PanelBusMotionState['shape']) => void;
+  /** Switch what the envelope drives: Filter cutoff or Amp gate. @since 2.54.0 */
+  onMotionTargetChange: (target: PanelBusMotionState['target']) => void;
 }
 
 export function usePanelBus(host: PluginHost, activeSceneId: string | null): UsePanelBusResult {
   const supported = typeof host.getPanelBusState === 'function';
   const sidechainSupported =
     typeof host.getPanelBusSidechain === 'function' && typeof host.setPanelBusSidechain === 'function';
+  const motionSupported =
+    typeof host.getPanelBusMotion === 'function' && typeof host.setPanelBusMotion === 'function';
   const fxReorderSupported = supported && typeof host.movePanelBusFx === 'function';
   const [bus, setBus] = useState<PanelBusState | null>(null);
   const [levels, setLevels] = useState<PanelBusLevels | null>(null);
   const [sidechain, setSidechain] = useState<PanelBusSidechainState | null>(null);
+  const [motion, setMotion] = useState<PanelBusMotionState | null>(null);
   const [availableFx, setAvailableFx] = useState<InstrumentDescriptor[]>([]);
   const [fxLoading, setFxLoading] = useState(false);
   const [fxPickerOpen, setFxPickerOpen] = useState(false);
@@ -81,6 +102,8 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
   const loadSeqRef = useRef(0);
   const sidechainSeqRef = useRef(0);
   const sidechainDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const motionSeqRef = useRef(0);
+  const motionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reload = useCallback(async (): Promise<void> => {
     if (!supported || !activeSceneId || !host.getPanelBusState) {
@@ -112,13 +135,30 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
     }
   }, [host, activeSceneId, sidechainSupported]);
 
+  const reloadMotion = useCallback(async (): Promise<void> => {
+    if (!motionSupported || !activeSceneId || !host.getPanelBusMotion) {
+      setMotion(null);
+      return;
+    }
+    const seq = ++motionSeqRef.current;
+    try {
+      const state = await host.getPanelBusMotion(activeSceneId);
+      if (motionSeqRef.current === seq) setMotion(state);
+    } catch {
+      // Cheap blob read — a hiccup just leaves the prior state; the next
+      // scene change or knob touch converges.
+    }
+  }, [host, activeSceneId, motionSupported]);
+
   useEffect(() => {
     setBus(null);
     setFxPickerOpen(false);
     setSidechain(null);
+    setMotion(null);
     void reload();
     void reloadSidechain();
-  }, [reload, reloadSidechain]);
+    void reloadMotion();
+  }, [reload, reloadSidechain, reloadMotion]);
 
   // Flush guard: never leave a pending debounced amount pointing at a stale
   // scene or an unmounted panel.
@@ -127,6 +167,10 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
       if (sidechainDebounceRef.current) {
         clearTimeout(sidechainDebounceRef.current);
         sidechainDebounceRef.current = null;
+      }
+      if (motionDebounceRef.current) {
+        clearTimeout(motionDebounceRef.current);
+        motionDebounceRef.current = null;
       }
     };
   }, [activeSceneId]);
@@ -267,18 +311,19 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
       if (!sidechainSupported || !activeSceneId || !host.setPanelBusSidechain) return;
       const clamped = Math.max(0, Math.min(1, amount));
       const presetId = sidechain?.presetId ?? 'classic';
+      const source = sidechain?.source ?? 'kicks';
       // Local echo so the knob tracks the drag; the host write debounces.
       setSidechain((prev) =>
         prev
           ? { ...prev, amount: clamped, engaged: true }
-          : { engaged: true, amount: clamped, presetId, kickTrackCount: 0, kickOnsetCount: 0 }
+          : { engaged: true, amount: clamped, presetId, source, kickTrackCount: 0, kickOnsetCount: 0 }
       );
       if (sidechainDebounceRef.current) clearTimeout(sidechainDebounceRef.current);
       sidechainDebounceRef.current = setTimeout(() => {
         sidechainDebounceRef.current = null;
         void (async () => {
           try {
-            await host.setPanelBusSidechain!(activeSceneId, clamped, presetId);
+            await host.setPanelBusSidechain!(activeSceneId, clamped, presetId, source);
           } catch {
             // surfaced by the host layer; reload below converges
           }
@@ -289,14 +334,86 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
     onSidechainPresetChange: (presetId: PanelBusSidechainState['presetId']) => {
       if (!sidechainSupported || !activeSceneId || !host.setPanelBusSidechain) return;
       const amount = sidechain?.amount ?? 0;
+      const source = sidechain?.source ?? 'kicks';
       setSidechain((prev) => (prev ? { ...prev, presetId, engaged: true } : prev));
       void (async () => {
         try {
-          await host.setPanelBusSidechain!(activeSceneId, amount, presetId);
+          await host.setPanelBusSidechain!(activeSceneId, amount, presetId, source);
         } catch {
           // surfaced by the host layer; reload below converges
         }
         await reloadSidechain();
+      })();
+    },
+    onSidechainSourceChange: (source: PanelBusSidechainState['source']) => {
+      if (!sidechainSupported || !activeSceneId || !host.setPanelBusSidechain) return;
+      const amount = sidechain?.amount ?? 0;
+      const presetId = sidechain?.presetId ?? 'classic';
+      setSidechain((prev) => (prev ? { ...prev, source, engaged: true } : prev));
+      void (async () => {
+        try {
+          await host.setPanelBusSidechain!(activeSceneId, amount, presetId, source);
+        } catch {
+          // surfaced by the host layer; reload below converges
+        }
+        await reloadSidechain();
+      })();
+    },
+    motion,
+    motionSupported,
+    onMotionAmountChange: (amount: number) => {
+      if (!motionSupported || !activeSceneId || !host.setPanelBusMotion) return;
+      const clamped = Math.max(0, Math.min(1, amount));
+      // Local echo so the slider tracks the drag; the host write debounces.
+      setMotion((prev) => (prev ? { ...prev, amount: clamped, engaged: true } : prev));
+      if (motionDebounceRef.current) clearTimeout(motionDebounceRef.current);
+      motionDebounceRef.current = setTimeout(() => {
+        motionDebounceRef.current = null;
+        void (async () => {
+          try {
+            await host.setPanelBusMotion!(activeSceneId, { amount: clamped });
+          } catch {
+            // surfaced by the host layer; reload below converges
+          }
+          await reloadMotion();
+        })();
+      }, 150);
+    },
+    onMotionRateChange: (rateQn: number) => {
+      if (!motionSupported || !activeSceneId || !host.setPanelBusMotion) return;
+      setMotion((prev) => (prev ? { ...prev, rateQn, patternQn: [], engaged: true } : prev));
+      void (async () => {
+        try {
+          // A single strip-picked rate replaces any agent-authored pattern.
+          await host.setPanelBusMotion!(activeSceneId, { rateQn, patternQn: [] });
+        } catch {
+          // surfaced by the host layer; reload below converges
+        }
+        await reloadMotion();
+      })();
+    },
+    onMotionShapeChange: (shape: PanelBusMotionState['shape']) => {
+      if (!motionSupported || !activeSceneId || !host.setPanelBusMotion) return;
+      setMotion((prev) => (prev ? { ...prev, shape, engaged: true } : prev));
+      void (async () => {
+        try {
+          await host.setPanelBusMotion!(activeSceneId, { shape });
+        } catch {
+          // surfaced by the host layer; reload below converges
+        }
+        await reloadMotion();
+      })();
+    },
+    onMotionTargetChange: (target: PanelBusMotionState['target']) => {
+      if (!motionSupported || !activeSceneId || !host.setPanelBusMotion) return;
+      setMotion((prev) => (prev ? { ...prev, target, engaged: true } : prev));
+      void (async () => {
+        try {
+          await host.setPanelBusMotion!(activeSceneId, { target });
+        } catch {
+          // surfaced by the host layer; reload below converges
+        }
+        await reloadMotion();
       })();
     },
   };

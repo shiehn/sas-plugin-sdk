@@ -45,7 +45,7 @@ export interface FadeTrackRowProps {
   /** How the fade is shaped — shown read-only (volume = level ramp, build = notes). */
   gesture: FadeGesture;
   /** Audio transition variant — relabels the badge (Stutter/Chopped/Delay). @since SDK 2.32.0 */
-  effect?: 'fade' | 'stutter' | 'chopped' | 'delay';
+  effect?: 'fade' | 'stutter' | 'chopped' | 'delay' | 'filter' | 'tape-stop';
   /** Fade position 0..1 — WHERE in time the fade sits. Defaults centered. */
   sliderPos?: number;
   /** Toggle mute. */

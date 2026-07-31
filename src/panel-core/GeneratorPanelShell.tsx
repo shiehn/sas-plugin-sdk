@@ -495,6 +495,36 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
                     ? panelBus.onSidechainPresetChange
                     : undefined
                 }
+                onSidechainSourceChange={
+                  adapter.features.busSidechain && panelBus.sidechainSupported
+                    ? panelBus.onSidechainSourceChange
+                    : undefined
+                }
+                motion={
+                  adapter.features.busMotion && panelBus.motionSupported
+                    ? panelBus.motion
+                    : null
+                }
+                onMotionAmountChange={
+                  adapter.features.busMotion && panelBus.motionSupported
+                    ? panelBus.onMotionAmountChange
+                    : undefined
+                }
+                onMotionRateChange={
+                  adapter.features.busMotion && panelBus.motionSupported
+                    ? panelBus.onMotionRateChange
+                    : undefined
+                }
+                onMotionShapeChange={
+                  adapter.features.busMotion && panelBus.motionSupported
+                    ? panelBus.onMotionShapeChange
+                    : undefined
+                }
+                onMotionTargetChange={
+                  adapter.features.busMotion && panelBus.motionSupported
+                    ? panelBus.onMotionTargetChange
+                    : undefined
+                }
               />
             )}
             {slots?.beforeRows}

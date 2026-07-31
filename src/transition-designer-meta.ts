@@ -49,20 +49,22 @@ export type TransitionRowType = 'crossfade' | 'fade-out' | 'fade-in';
 
 /**
  * Audio-only transition gesture for a ONE-SIDED (orphan) loop. `'fade'` is the
- * default level ramp (works for any family); `stutter`/`chopped`/`delay` are
+ * default level ramp (works for any family); `stutter`/`chopped`/`delay`/`filter` are
  * audio panels only, surfaced via the row's effect selector when the panel
  * passes `onCreateAudioTransition`. @since SDK 2.32.0
  */
-export type AudioEffect = 'fade' | 'stutter' | 'chopped' | 'delay';
-export const AUDIO_EFFECTS: readonly AudioEffect[] = ['fade', 'stutter', 'chopped', 'delay'];
+export type AudioEffect = 'fade' | 'stutter' | 'chopped' | 'delay' | 'filter' | 'tape-stop';
+export const AUDIO_EFFECTS: readonly AudioEffect[] = ['fade', 'stutter', 'chopped', 'delay', 'filter', 'tape-stop'];
 export const AUDIO_EFFECT_LABEL: Record<AudioEffect, string> = {
   fade: 'Fade',
   stutter: 'Stutter',
   chopped: 'Chopped',
   delay: 'Delay',
+  filter: 'Filter',
+  'tape-stop': 'Tape Stop',
 };
 export function asAudioEffect(v: unknown): AudioEffect | null {
-  return v === 'fade' || v === 'stutter' || v === 'chopped' || v === 'delay' ? v : null;
+  return v === 'fade' || v === 'stutter' || v === 'chopped' || v === 'delay' || v === 'filter' || v === 'tape-stop' ? v : null;
 }
 
 /** Derive a row's transition type from which slots are filled. `null` = empty row. */

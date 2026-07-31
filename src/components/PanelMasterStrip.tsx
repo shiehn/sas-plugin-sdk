@@ -17,6 +17,7 @@ import type {
   InstrumentDescriptor,
   PanelBusFxEntry,
   PanelBusLevels,
+  PanelBusMotionState,
   PanelBusSidechainState,
   PanelBusState,
 } from '../types/plugin-sdk.types';
@@ -28,6 +29,35 @@ const SIDECHAIN_PRESETS: ReadonlyArray<{ id: PanelBusSidechainState['presetId'];
   { id: 'subtle', label: 'Subtle' },
   { id: 'classic', label: 'Classic' },
   { id: 'hard', label: 'Hard' },
+];
+
+/** Duck onset sources: real kicks, or synthetic ghost grids (pump without kicks). */
+const SIDECHAIN_SOURCES: ReadonlyArray<{ id: PanelBusSidechainState['source']; label: string }> = [
+  { id: 'kicks', label: 'Kicks' },
+  { id: 'four-floor', label: '4-Flr' },
+  { id: 'eighths', label: '8ths' },
+];
+
+/** What the motion envelope drives. */
+const MOTION_TARGETS: ReadonlyArray<{ id: PanelBusMotionState['target']; label: string }> = [
+  { id: 'filter', label: 'Filt' },
+  { id: 'amp', label: 'Gate' },
+];
+
+/** Strip-pickable wobble rates (LFO period in quarter-notes). */
+const MOTION_RATES: ReadonlyArray<{ qn: number; label: string }> = [
+  { qn: 1, label: '1/4' },
+  { qn: 0.5, label: '1/8' },
+  { qn: 1 / 3, label: '1/8T' },
+  { qn: 0.25, label: '1/16' },
+  { qn: 1 / 6, label: '1/16T' },
+];
+
+const MOTION_SHAPES: ReadonlyArray<{ id: PanelBusMotionState['shape']; label: string }> = [
+  { id: 'sine', label: 'Sine' },
+  { id: 'triangle', label: 'Tri' },
+  { id: 'saw', label: 'Saw' },
+  { id: 'square', label: 'Gate' },
 ];
 
 export interface PanelMasterStripProps {
@@ -80,6 +110,20 @@ export interface PanelMasterStripProps {
   sidechain?: PanelBusSidechainState | null;
   onSidechainAmountChange?: (amount: number) => void;
   onSidechainPresetChange?: (presetId: PanelBusSidechainState['presetId']) => void;
+  /** Optional (2.54.0 hosts): duck onset source select. */
+  onSidechainSourceChange?: (source: PanelBusSidechainState['source']) => void;
+
+  /**
+   * Motion (tempo-locked filter wobble) cluster — renders ONLY when all four
+   * props are provided (panels opt in via `features.busMotion`; the shell
+   * additionally gates on host support). @since 2.54.0
+   */
+  motion?: PanelBusMotionState | null;
+  onMotionAmountChange?: (amount: number) => void;
+  onMotionRateChange?: (rateQn: number) => void;
+  onMotionShapeChange?: (shape: PanelBusMotionState['shape']) => void;
+  /** Optional (2.54.0 hosts): envelope target select (Filter | Gate). */
+  onMotionTargetChange?: (target: PanelBusMotionState['target']) => void;
 }
 
 export function PanelMasterStrip({
@@ -103,9 +147,23 @@ export function PanelMasterStrip({
   sidechain = null,
   onSidechainAmountChange,
   onSidechainPresetChange,
+  onSidechainSourceChange,
+  motion = null,
+  onMotionAmountChange,
+  onMotionRateChange,
+  onMotionShapeChange,
+  onMotionTargetChange,
 }: PanelMasterStripProps): React.ReactElement {
   const [search, setSearch] = useState('');
   const showSidechain = sidechain != null && !!onSidechainAmountChange && !!onSidechainPresetChange;
+  const showMotion =
+    motion != null && !!onMotionAmountChange && !!onMotionRateChange && !!onMotionShapeChange;
+  const motionHasPattern = showMotion && motion.patternQn.length > 0;
+  // Match the stored period to a strip option (float-tolerant); an
+  // agent-authored custom rate or pattern renders as its own option.
+  const motionRateValue = motionHasPattern
+    ? 'pattern'
+    : (MOTION_RATES.find((r) => Math.abs(r.qn - (motion?.rateQn ?? 0.5)) < 1e-3)?.label ?? 'custom');
 
   // --- Drag-to-reorder (useTrackReorder's HTML5 DnD idiom, chip-sized —
   // the same interaction as the track drawer's 3rd-party FX chips) ---
@@ -115,7 +173,9 @@ export function PanelMasterStrip({
   // the drop handler (useTrackReorder's fromRef shape).
   const dragFromRef = useRef<number | null>(null);
   const canReorderFx = !!onMoveFx && !disabled && bus.fx.length > 1;
-  const sidechainNoKicks = showSidechain && sidechain.amount > 0 && sidechain.kickOnsetCount === 0;
+  const sidechainNoKicks =
+    showSidechain && sidechain.amount > 0 && sidechain.kickOnsetCount === 0
+    && (sidechain.source ?? 'kicks') === 'kicks';
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -246,6 +306,25 @@ export function PanelMasterStrip({
                 </option>
               ))}
             </select>
+            {onSidechainSourceChange && (
+              <select
+                data-testid="bus-sidechain-source"
+                value={sidechain.source ?? 'kicks'}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                  onSidechainSourceChange(e.target.value as PanelBusSidechainState['source'])
+                }
+                disabled={disabled}
+                className="sas-input text-[10px] px-1 py-0.5"
+                aria-label="Sidechain onset source"
+                title="What triggers the duck: the scene's kicks, or a synthetic ghost grid (pump without kicks)"
+              >
+                {SIDECHAIN_SOURCES.map((src) => (
+                  <option key={src.id} value={src.id}>
+                    {src.label}
+                  </option>
+                ))}
+              </select>
+            )}
             {sidechainNoKicks && (
               <span
                 data-testid="bus-sidechain-no-kicks"
@@ -254,6 +333,109 @@ export function PanelMasterStrip({
                 no kicks
               </span>
             )}
+          </div>
+        )}
+
+        {/* Motion (tempo-locked filter wobble): depth + rate + shape. The
+            envelope is rendered per-sample against the scene tempo — live
+            and bounced output are identical. */}
+        {showMotion && (
+          <div
+            data-testid="bus-motion"
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-sm border whitespace-nowrap ${
+              motion.amount > 0
+                ? 'border-sas-accent/60 bg-sas-accent/10'
+                : 'border-sas-border bg-sas-panel'
+            }`}
+            title="Filter motion: a tempo-locked wobble on this bus's summed output (0 = off)"
+          >
+            <span
+              className={`text-[9px] font-bold tracking-widest select-none ${
+                motion.amount > 0 ? 'text-sas-accent' : 'text-sas-muted/70'
+              }`}
+            >
+              WOB
+            </span>
+            <input
+              data-testid="bus-motion-amount"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round(motion.amount * 100)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                onMotionAmountChange(Number(e.target.value) / 100)
+              }
+              disabled={disabled}
+              className="w-16 accent-sas-accent disabled:opacity-50"
+              aria-label="Filter motion depth"
+            />
+            <span className="text-[9px] text-sas-muted/70 w-6 text-right select-none" data-testid="bus-motion-amount-label">
+              {motion.amount > 0 ? `${Math.round(motion.amount * 100)}%` : 'Off'}
+            </span>
+            {onMotionTargetChange && (
+              <select
+                data-testid="bus-motion-target"
+                value={motion.target ?? 'filter'}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                  onMotionTargetChange(e.target.value as PanelBusMotionState['target'])
+                }
+                disabled={disabled}
+                className="sas-input text-[10px] px-1 py-0.5"
+                aria-label="Motion target"
+                title="What the envelope drives: the filter cutoff, or the level (trance gate)"
+              >
+                {MOTION_TARGETS.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            <select
+              data-testid="bus-motion-rate"
+              value={motionRateValue}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                const picked = MOTION_RATES.find((r) => r.label === e.target.value);
+                if (picked) onMotionRateChange(picked.qn);
+              }}
+              disabled={disabled}
+              className="sas-input text-[10px] px-1 py-0.5"
+              aria-label="Filter motion rate"
+              title={motionHasPattern ? 'An agent-set per-bar pattern is active — picking a rate replaces it' : 'Wobble rate (note value)'}
+            >
+              {MOTION_RATES.map((rate) => (
+                <option key={rate.label} value={rate.label}>
+                  {rate.label}
+                </option>
+              ))}
+              {motionHasPattern && (
+                <option value="pattern" disabled>
+                  Pattern
+                </option>
+              )}
+              {!motionHasPattern && motionRateValue === 'custom' && (
+                <option value="custom" disabled>
+                  Custom
+                </option>
+              )}
+            </select>
+            <select
+              data-testid="bus-motion-shape"
+              value={motion.shape}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                onMotionShapeChange(e.target.value as PanelBusMotionState['shape'])
+              }
+              disabled={disabled}
+              className="sas-input text-[10px] px-1 py-0.5"
+              aria-label="Filter motion shape"
+            >
+              {MOTION_SHAPES.map((shape) => (
+                <option key={shape.id} value={shape.id}>
+                  {shape.label}
+                </option>
+              ))}
+            </select>
           </div>
         )}
 
