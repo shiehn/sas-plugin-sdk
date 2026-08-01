@@ -42,10 +42,12 @@ const SIDECHAIN_SOURCES: ReadonlyArray<{ id: PanelBusSidechainState['source']; l
 const MOTION_TARGETS: ReadonlyArray<{ id: PanelBusMotionState['target']; label: string }> = [
   { id: 'filter', label: 'Filt' },
   { id: 'amp', label: 'Gate' },
+  { id: 'pan', label: 'Pan' },
 ];
 
 /** Strip-pickable wobble rates (LFO period in quarter-notes). */
 const MOTION_RATES: ReadonlyArray<{ qn: number; label: string }> = [
+  { qn: 2, label: '1/2' },
   { qn: 1, label: '1/4' },
   { qn: 0.5, label: '1/8' },
   { qn: 1 / 3, label: '1/8T' },
@@ -58,6 +60,7 @@ const MOTION_SHAPES: ReadonlyArray<{ id: PanelBusMotionState['shape']; label: st
   { id: 'triangle', label: 'Tri' },
   { id: 'saw', label: 'Saw' },
   { id: 'square', label: 'Gate' },
+  { id: 'random', label: 'Rnd' },
 ];
 
 export interface PanelMasterStripProps {
@@ -383,7 +386,7 @@ export function PanelMasterStrip({
                 disabled={disabled}
                 className="sas-input text-[10px] px-1 py-0.5"
                 aria-label="Motion target"
-                title="What the envelope drives: the filter cutoff, or the level (trance gate)"
+                title="What the envelope drives: the filter cutoff, the level (trance gate), or the pan (auto-pan)"
               >
                 {MOTION_TARGETS.map((t) => (
                   <option key={t.id} value={t.id}>

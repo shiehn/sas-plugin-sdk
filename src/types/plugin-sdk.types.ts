@@ -266,12 +266,16 @@ export interface PanelBusMotionState {
   /** 0..1 motion depth, 0 = off. */
   amount: number;
   /** 'filter' drives the cutoff; 'amp' drives GAIN (trance gate / level
-   *  ride, no filter in circuit). @since SDK 2.54.0 */
-  target: 'filter' | 'amp';
+   *  ride, no filter in circuit); 'pan' swings a balance-law pan (auto-pan —
+   *  unity at center, far side attenuates; 'pan' @since SDK 2.55.0).
+   *  @since SDK 2.54.0 */
+  target: 'filter' | 'amp' | 'pan';
   mode: 'lfo' | 'sweep';
   filter: 'lp' | 'hp' | 'bp';
-  /** LFO waveform — every shape starts OPEN at the cycle boundary. */
-  shape: 'sine' | 'triangle' | 'saw' | 'square';
+  /** LFO waveform — every shape starts OPEN at the cycle boundary, except
+   *  'random': a sample-and-hold level per cycle, hashed from the cycle index
+   *  (deterministic — repeats with the loop; @since SDK 2.55.0). */
+  shape: 'sine' | 'triangle' | 'saw' | 'square' | 'random';
   /** LFO period in quarter-notes (1 = 1/4-note wobble, 0.5 = 1/8, 1/3 = 1/8T). */
   rateQn: number;
   /** Per-bar periods (qn); empty = single rateQn. Phase restarts each bar. */
