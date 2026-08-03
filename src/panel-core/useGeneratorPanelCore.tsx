@@ -1235,10 +1235,15 @@ export function useGeneratorPanelCore({
   const handleGenerate = useCallback(
     async (trackId: string): Promise<void> => {
       const track = tracks.find((t) => t.handle.id === trackId);
-      if (!track || !track.prompt.trim()) return;
-      if (!isAuthenticated) {
-        host.showToast('warning', 'Sign In Required', 'Please sign in to generate MIDI');
-        return;
+      if (!track) return;
+      // Promptless families (timbre-graph) derive generation from track
+      // state — no prompt to require, and no LLM call to gate behind auth.
+      if (!adapter.features.promptlessGeneration) {
+        if (!track.prompt.trim()) return;
+        if (!isAuthenticated) {
+          host.showToast('warning', 'Sign In Required', 'Please sign in to generate MIDI');
+          return;
+        }
       }
 
       setTracks((prev) =>

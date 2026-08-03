@@ -82,6 +82,13 @@ export interface PanelIdentity {
 
 /** Which core surfaces this family mounts. */
 export interface PanelFeatureFlags {
+  /**
+   * Generation derives entirely from track state (e.g. the track's role) —
+   * there is no prompt to type and no LLM call. The core's generate handler
+   * skips both the empty-prompt gate and the sign-in gate, which otherwise
+   * silently no-op the button for promptless rows. @since 2.59.0
+   */
+  promptlessGeneration?: boolean;
   /** Pick tab + instrument descriptors + editor stage (synth: true). */
   instrumentPicker: boolean;
   /** COMPOSING bar + bulk placeholder hybrid phase (synth: true). */
