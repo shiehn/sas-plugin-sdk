@@ -34,7 +34,7 @@ import { parseCrossfadePairs, type CrossfadePairMeta } from '../crossfade-meta';
 import { parseFades, splitFadeEntries, type FadeEntry } from '../fade-meta';
 import type { DrawerTab } from '../components/TrackDrawer';
 import { type GeneratorTrackState, newTrackState } from './track-state';
-import { pluginFxToToggleFx, trackDataKey } from './panel-helpers';
+import { generationBlockedBy, pluginFxToToggleFx, trackDataKey } from './panel-helpers';
 import { runLinkedBroadcast, type GroupBroadcastProgress } from './linked-broadcast';
 import { panelClipEndSeconds, panelQuarterNotesPerBar } from './meter';
 import {
@@ -1238,12 +1238,13 @@ export function useGeneratorPanelCore({
       if (!track) return;
       // Promptless families (timbre-graph) derive generation from track
       // state — no prompt to require, and no LLM call to gate behind auth.
-      if (!adapter.features.promptlessGeneration) {
-        if (!track.prompt.trim()) return;
-        if (!isAuthenticated) {
-          host.showToast('warning', 'Sign In Required', 'Please sign in to generate MIDI');
-          return;
-        }
+      const blocked = generationBlockedBy(
+        adapter.features, track.prompt, isAuthenticated,
+      );
+      if (blocked === 'prompt') return;
+      if (blocked === 'auth') {
+        host.showToast('warning', 'Sign In Required', 'Please sign in to generate MIDI');
+        return;
       }
 
       setTracks((prev) =>

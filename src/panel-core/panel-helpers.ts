@@ -123,3 +123,24 @@ export function parseLLMNoteResponse(content: string): LLMNoteResponse | null {
     return null;
   }
 }
+
+
+/**
+ * Why a generate click is refused, if it is.
+ *
+ * Two INDEPENDENT gates, kept apart because conflating them caused a real
+ * failure: a family that derives its prompt from track state was treated as
+ * needing no network either, so an unauthenticated user got an unexplained
+ * fallback instead of "please sign in".
+ */
+export type GenerationBlock = 'prompt' | 'auth' | null;
+
+export function generationBlockedBy(
+  features: { promptlessGeneration?: boolean; localGeneration?: boolean },
+  prompt: string,
+  isAuthenticated: boolean,
+): GenerationBlock {
+  if (!features.promptlessGeneration && !prompt.trim()) return 'prompt';
+  if (!features.localGeneration && !isAuthenticated) return 'auth';
+  return null;
+}

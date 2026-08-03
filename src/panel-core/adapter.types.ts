@@ -83,12 +83,21 @@ export interface PanelIdentity {
 /** Which core surfaces this family mounts. */
 export interface PanelFeatureFlags {
   /**
-   * Generation derives entirely from track state (e.g. the track's role) —
-   * there is no prompt to type and no LLM call. The core's generate handler
-   * skips both the empty-prompt gate and the sign-in gate, which otherwise
-   * silently no-op the button for promptless rows. @since 2.59.0
+   * Generation derives its prompt entirely from track state (e.g. the track's
+   * role), so there is no prompt to type. Waives the empty-prompt gate, which
+   * otherwise silently no-ops the button for promptless rows.
+   *
+   * This says nothing about whether the model is called — set
+   * `localGeneration` for that. @since 2.59.0
    */
   promptlessGeneration?: boolean;
+  /**
+   * Generation needs no network: no `generateWithLLM`, no gateway. Waives the
+   * sign-in gate. Leave unset for anything that calls the model, or an
+   * unauthenticated user gets an unexplained failure rather than a prompt to
+   * sign in. @since 2.62.0
+   */
+  localGeneration?: boolean;
   /** Pick tab + instrument descriptors + editor stage (synth: true). */
   instrumentPicker: boolean;
   /** COMPOSING bar + bulk placeholder hybrid phase (synth: true). */
