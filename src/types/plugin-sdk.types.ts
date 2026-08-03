@@ -539,6 +539,22 @@ export interface PluginHost {
    */
   shufflePreset(trackId: string, excludeNames?: readonly string[], options?: ShufflePresetOptions): Promise<ShufflePresetResult>;
 
+  /**
+   * Pre-embed several `shufflePreset` descriptions in ONE network round-trip
+   * (since SDK 2.56.0).
+   *
+   * Multi-voice panels that give each voice its own `options.description`
+   * otherwise pay a separate embed per voice, serialized behind the
+   * per-plugin lock. Call this once with every description you are about to
+   * shuffle with, then shuffle as usual — the per-voice calls hit a warm
+   * cache. Panels that reuse ONE description across voices need not call it.
+   *
+   * Best-effort and never throws: on failure each shuffle just embeds its own
+   * description as before. Descriptions beyond the gateway's 16-text cap are
+   * ignored (they simply stay cold).
+   */
+  prewarmPresetDescriptions?(descriptions: readonly string[]): Promise<void>;
+
   /** Duplicate track: copy MIDI + role to a new track with a different preset. Only works on owned tracks. */
   duplicateTrack(trackId: string): Promise<PluginTrackHandle>;
 
@@ -665,6 +681,25 @@ export interface PluginHost {
   replaceTrackAudio?(trackId: string, audioPath: string): Promise<void>;
 
   // --- Plugin/Synth Operations ---
+
+  /**
+   * Set several of a synth's parameters BY NAME in one call.
+   *
+   * The engine addresses parameters by index, but callers holding a
+   * precomputed patch state know names — and indices are not stable across
+   * plugin versions. Names are resolved host-side against the live parameter
+   * list. Unknown names REJECT the whole call rather than half-applying, since
+   * a partially applied snapshot corresponds to no verified sound.
+   *
+   * `pluginIndex` defaults to 0 (the track's instrument).
+   *
+   * @since 2.57.0
+   */
+  setSynthParameters?(
+    trackId: string,
+    params: Record<string, number>,
+    pluginIndex?: number
+  ): Promise<void>;
 
   /** Load a VST3/AU plugin onto a track this plugin owns. */
   loadSynthPlugin(trackId: string, pluginName: string): Promise<number>;
@@ -2598,6 +2633,18 @@ export interface LLMGenerationConfig {
   topP?: number;
   topK?: number;
   maxOutputTokens?: number;
+  /**
+   * Thinking depth for reasoning-capable Gemini models (3.x Pro/Flash).
+   *
+   * OMIT to get the model's own default, which on Pro is full dynamic
+   * thinking — the right choice for genuinely hard joint composition (the
+   * ensemble plugin's N-voice counterpoint call). Set `'LOW'` only when the
+   * model's job is small and the heavy lifting is mechanical downstream (the
+   * arp plugin designs one short cell; `expandPattern` does the rest).
+   *
+   * Ignored by non-reasoning models.
+   */
+  thinkingLevel?: 'LOW' | 'HIGH';
 }
 
 export interface LLMSystemInstruction {
