@@ -701,6 +701,23 @@ export interface PluginHost {
     pluginIndex?: number
   ): Promise<void>;
 
+  /**
+   * Apply a Surge XT .fxp preset FILE to a track's instrument, by path.
+   *
+   * The host converts the fxp chunk into the Tracktion <PLUGIN> state format
+   * (surge-state-wrapper) and applies it through the normal setPluginState +
+   * persistTrackPresetState path, so the preset becomes the track's durable
+   * sound identity. Lets a plugin restore anchors measured offline against
+   * the user's installed Surge library.
+   *
+   * @since 2.58.0
+   */
+  applySurgeFxpPreset?(
+    trackId: string,
+    fxpPath: string,
+    pluginIndex?: number
+  ): Promise<void>;
+
   /** Load a VST3/AU plugin onto a track this plugin owns. */
   loadSynthPlugin(trackId: string, pluginName: string): Promise<number>;
 
