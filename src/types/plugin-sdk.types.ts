@@ -698,7 +698,13 @@ export interface PluginHost {
   setSynthParameters?(
     trackId: string,
     params: Record<string, number>,
-    pluginIndex?: number
+    pluginIndex?: number,
+    /**
+     * relative: values are DELTAS applied to each parameter's live value
+     * (range-clamped host-side). Lets a morph ride on top of whatever preset
+     * the track currently runs. @since 2.60.0
+     */
+    options?: { relative?: boolean }
   ): Promise<void>;
 
   /**
