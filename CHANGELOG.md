@@ -4,6 +4,37 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 2.63.0 — FX parameter automation
+
+Before this, **`setTrackVolumeAutomation` was the entire automation surface a
+panel could reach** — volume only. A panel could not automate an FX parameter
+at all, and there is no beat clock in the renderer to fake one with
+(`onTransportEvent` fires only play/stop; `positionChange` is declared but
+never emitted). Tempo-locked FX automation from a panel was simply impossible.
+
+- **`PluginHost.setTrackFxAutomation?(trackId, category, curves)`** — write
+  automation curves onto a track's built-in FX. `curves` maps parameter name to
+  a `{ timeSeconds, value, curve? }` point list. Rides the engine's
+  `plugin.setParameterAutomation`, so curves **re-read on loop wrap and bake
+  into bounces** — a pattern authored across one loop repeats for free and
+  survives into renders. An empty point array CLEARS that parameter.
+  - The alias **`'dryWet'`** resolves to whichever parameter carries the
+    category's mix (`'Wet Level'` for reverb, `'Mix proportion'` for delay), so
+    the common case needs no knowledge of engine parameter names.
+  - Chorus and phaser drive mix through plugin *state* rather than a parameter,
+    so `'dryWet'` is rejected for those with a reason — never silently no-op'd.
+  - Partial success is REPORTED (`{ written, skipped }`), not thrown: one bad
+    parameter name must not discard the curves that resolved. A single
+    requested curve that fails does throw.
+- **`PluginHost.listTrackFxParameters?(trackId, category)`** — enumerate a
+  built-in FX's automatable parameters (name, index, range, current value), with
+  `isDryWet` marking what the alias resolves to.
+- Feature-gate both on `typeof host.setTrackFxAutomation === 'function'`.
+
+CAVEAT: curves are authored in SECONDS at the current tempo. After a BPM change
+they no longer line up musically — re-push them. (`AutomationCurve` supports a
+beat time-base; wiring it up is future work.)
+
 ## 2.53.0 — Panel-bus FX drag-to-reorder
 
 - **`PluginHost.movePanelBusFx?(sceneId, fromFxIndex, toFxIndex)`** — move a

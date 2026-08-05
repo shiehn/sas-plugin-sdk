@@ -602,6 +602,55 @@ export interface PluginHost {
   /** Set FX dry/wet level for a track. */
   setTrackFxDryWet(trackId: string, category: string, value: number): Promise<void>;
 
+  /**
+   * Enumerate a built-in FX's automatable parameters, so a panel can discover
+   * names before writing curves. `category` is an FX-toggle category
+   * ('reverb', 'delay', 'eq', 'compressor', 'chorus', 'phaser').
+   *
+   * Optional — panels MUST feature-gate on
+   * `typeof host.listTrackFxParameters === 'function'`.
+   * @since SDK 2.63.0
+   */
+  listTrackFxParameters?(
+    trackId: string,
+    category: string
+  ): Promise<PluginFxParameterInfo[]>;
+
+  /**
+   * Write automation curves onto a track's built-in FX.
+   *
+   * `curves` maps PARAMETER NAME to a point list; names resolve against the
+   * live plugin (see {@link listTrackFxParameters}). The alias **`'dryWet'`**
+   * resolves to whichever parameter carries that category's mix — `'Wet Level'`
+   * for reverb, `'Mix proportion'` for delay — so the common case needs no
+   * knowledge of engine parameter names.
+   *
+   * Points are `{ timeSeconds, value }` measured from the START OF THE EDIT,
+   * and values are in the parameter's own range (the host clamps). Curves
+   * re-read on loop wrap and bake into bounces, so a pattern authored across
+   * one loop repeats for free and survives into renders.
+   *
+   * An EMPTY point array CLEARS that parameter's automation, and its static
+   * value takes over again.
+   *
+   * Two caveats worth designing around:
+   *  - Curves are authored in SECONDS at the current tempo. After a BPM change
+   *    they no longer line up musically — re-push them.
+   *  - Not every category has an automatable mix. Chorus and phaser drive
+   *    dry/wet through plugin state rather than a parameter, so `'dryWet'` is
+   *    rejected for those (reported in `skipped`, or thrown when it was the
+   *    only requested curve).
+   *
+   * Optional — panels MUST feature-gate on
+   * `typeof host.setTrackFxAutomation === 'function'`.
+   * @since SDK 2.63.0
+   */
+  setTrackFxAutomation?(
+    trackId: string,
+    category: string,
+    curves: Record<string, PluginAutomationPoint[]>
+  ): Promise<PluginFxAutomationResult>;
+
   // --- Real-time Track State ---
 
   /** Subscribe to real-time track state changes (mute, solo, volume, pan). Returns unsubscribe fn. */
@@ -2171,6 +2220,59 @@ export interface PluginFxCategoryDetailState {
 
 /** Full FX detail state for a track — one entry per FX category */
 export type PluginTrackFxDetailState = Record<string, PluginFxCategoryDetailState>;
+
+// ============================================================================
+// FX Automation Types
+// ============================================================================
+
+/**
+ * One breakpoint on a parameter's automation curve.
+ * @since SDK 2.63.0
+ */
+export interface PluginAutomationPoint {
+  /** Seconds from the start of the edit. */
+  timeSeconds: number;
+  /** Value in the PARAMETER's own range (the host clamps out-of-range). */
+  value: number;
+  /**
+   * Curve tension into this point, -1..1. 0 (the default) is linear.
+   * Leave unset unless you specifically want an eased segment.
+   */
+  curve?: number;
+}
+
+/**
+ * One automatable parameter on a built-in FX.
+ * @since SDK 2.63.0
+ */
+export interface PluginFxParameterInfo {
+  /** Engine parameter index — stable for built-in FX. */
+  index: number;
+  /** Parameter name, the key used in {@link PluginHost.setTrackFxAutomation}. */
+  name: string;
+  currentValue: number;
+  minValue: number;
+  maxValue: number;
+  /**
+   * True when this is the category's dry/wet parameter — i.e. what the
+   * `'dryWet'` alias resolves to. At most one parameter per FX has it, and
+   * categories whose mix is not automatable (chorus, phaser) have none.
+   */
+  isDryWet?: boolean;
+}
+
+/**
+ * Outcome of {@link PluginHost.setTrackFxAutomation}. Partial success is
+ * reported rather than thrown: one unknown parameter name should not discard
+ * the curves that DID resolve.
+ * @since SDK 2.63.0
+ */
+export interface PluginFxAutomationResult {
+  /** Parameters whose curves were written, with the resolved name. */
+  written: Array<{ name: string; pointCount: number }>;
+  /** Parameters that could not be written, each with a human-readable reason. */
+  skipped: Array<{ name: string; reason: string }>;
+}
 
 // ============================================================================
 // MIDI Types
