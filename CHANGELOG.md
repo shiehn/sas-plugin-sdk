@@ -4,6 +4,57 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 2.65.0 — Exact media properties for raw audio files
+
+`PluginSampleInfo.durationSeconds` only covers files that were imported into
+the sample library, so a panel resolving a one-shot straight out of a pack
+folder had no way to learn how long it is. That blocks end-alignment: you
+cannot place a riser so its natural end lands on the loop boundary without
+knowing its duration first.
+
+- **`host.getAudioFileInfo(filePath)` → `PluginAudioFileInfo`** —
+  `durationSeconds` (decoded, not read off the header), `sampleRate`,
+  `channels`. Backed by sas-audio-tool's analyze path.
+- Rejects `VALIDATION_ERROR` when the file does not exist and `ENGINE_ERROR`
+  when the audio tool is unavailable or cannot decode it. Treat any failure
+  as "duration unknown" and degrade gracefully rather than blocking
+  generation.
+- Optional for older-host compat — feature-check
+  `host.getAudioFileInfo?.(...)`.
+
+First consumer is the Mix Assets panel (`@signalsandsorcery/mix-assets`),
+which end-aligns risers via `startSec = loopEnd − sampleDuration`.
+
+## 2.64.0 — Animate: the cross-track animation surface
+
+The ownership model (`assertOwned`) blocks every per-track mutator on tracks a
+plugin didn't create — correct for generator panels, fatal for a control-plane
+panel whose whole job is animating OTHER panels' tracks. This release adds the
+single sanctioned exception: a **declarative, capability-gated animate
+surface**, built for the new Animate panel (`@signalsandsorcery/animate`).
+
+- **Types**: `AnimationSpec` (`type` + `targets` (track DB ids) + `params` +
+  optional `listen` sources), `AnimationType` (18-token wire vocabulary —
+  pumper/autopan/tremolo/trance-gate, fades/dj-filter/riser/reverb-tail/
+  delay-throw/washout, duck/sidechain-filter/keyed-gate/gap-filler,
+  stutter/drunk-walk/breathe), `AnimationListenDerive` (all deterministic —
+  MIDI onsets, ghost grids, or analysis of a cached offline source render;
+  never live audio), `AnimateState`/`AnimationInfo`/`AnimateTrackRef`.
+- **Host methods** (all optional — feature-gate on
+  `typeof host.setAnimation === 'function'`): `getAnimateState`,
+  `setAnimation` (full-spec upsert by `spec.id`; validates and pushes
+  compiled engine configs; `VALIDATION_ERROR` on unsupported type, bad
+  ranges, `targets ∩ listen.sources`, or a claimed (target, slot) — the
+  error names the conflicting animation), `removeAnimation` (clears every
+  pushed slot), `refreshAnimations` (system-facing re-push).
+- **`PluginCapabilities.crossTrackAutomation`** — gates the four methods
+  (`CAPABILITY_DENIED` otherwise). It does NOT unlock any direct per-track
+  mutator; those stay `assertOwned`-gated. Granted to the built-in Animate
+  panel only — treat further grants as a design smell, not a template.
+- The wire vocabulary is deliberately a superset of what the host compiles
+  today; unsupported types reject legibly so panel and host can version
+  independently.
+
 ## 2.63.0 — FX parameter automation
 
 Before this, **`setTrackVolumeAutomation` was the entire automation surface a

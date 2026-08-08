@@ -96,6 +96,20 @@ export interface ListAudioFilesOptions {
   recursive?: boolean;
 }
 
+/**
+ * Exact media properties of one audio file on disk, as reported by
+ * `host.getAudioFileInfo`.
+ * @since SDK 2.65.0
+ */
+export interface PluginAudioFileInfo {
+  /** Exact duration in seconds (from the decoded stream, not the header). */
+  durationSeconds: number;
+  /** Sample rate in Hz. */
+  sampleRate: number;
+  /** Channel count (1 = mono, 2 = stereo). */
+  channels: number;
+}
+
 /** Describes an available instrument plugin (VST3/AU synth) on the system. */
 export interface InstrumentDescriptor {
   /** Stable plugin identifier for loading (VST3 TUID or AU component ID) */
@@ -296,6 +310,138 @@ export interface PanelBusMotionState {
 /** Partial update for setPanelBusMotion — merge semantics, so a debounced
  *  amount slider can send `{ amount }` alone. @since SDK 2.54.0 */
 export type PanelBusMotionUpdate = Partial<Omit<PanelBusMotionState, 'engaged'>>;
+
+// ============================================================================
+// Animate — cross-track animation surface (since SDK 2.64.0)
+// ============================================================================
+
+/**
+ * The animation menu vocabulary. This union is the WIRE vocabulary — it is a
+ * superset of what any given host can compile; the host rejects types whose
+ * mechanism hasn't shipped yet with `VALIDATION_ERROR` naming the type, so a
+ * newer panel degrades legibly on an older host. @since SDK 2.64.0
+ */
+export type AnimationType =
+  // Cyclic — tempo-synced LFO-style, loops with the scene
+  | 'pumper'
+  | 'autopan'
+  | 'tremolo'
+  | 'trance-gate'
+  // Phrase — one arc over the scene loop
+  | 'fade-in'
+  | 'fade-out'
+  | 'dj-filter'
+  | 'riser'
+  | 'reverb-tail'
+  | 'delay-throw'
+  | 'washout'
+  // Reactive — driven by "listen" sources
+  | 'duck'
+  | 'sidechain-filter'
+  | 'keyed-gate'
+  | 'gap-filler'
+  // Lab — experimental (deterministic, but wilder defaults)
+  | 'stutter'
+  | 'drunk-walk'
+  | 'breathe';
+
+/**
+ * How a reactive animation derives its trigger envelope from its sources.
+ * All derivations are deterministic (render-parity-safe): MIDI onsets and
+ * ghost grids read the DB; the audio derivations analyze a cached offline
+ * render of the source stem — never live audio. @since SDK 2.64.0
+ */
+export type AnimationListenDerive =
+  | 'midi-onsets'
+  | 'ghost-four-floor'
+  | 'ghost-eighths'
+  | 'audio-onsets'
+  | 'audio-envelope';
+
+/**
+ * Per-animation parameters. Only `amount` is universal; which optional
+ * fields apply is defined per {@link AnimationType} (unknown fields for a
+ * type are rejected by the host). All musical quantities are quarter-note
+ * or bar denominated — never seconds. @since SDK 2.64.0
+ */
+export interface AnimationParams {
+  /** 0..1 depth; 0 = idle (config survives, mechanism idles). */
+  amount: number;
+  /** Cycle period in quarter-notes (cyclic types). */
+  rateQn?: number;
+  /** Per-bar periods (qn); empty/absent = single rateQn. */
+  patternQn?: number[];
+  /** LFO waveform (cyclic types). 'random' is deterministic per-cycle S&H. */
+  shape?: 'sine' | 'triangle' | 'saw' | 'square' | 'random';
+  /** Filter topology for filter-target types. */
+  filter?: 'lp' | 'hp' | 'bp';
+  /** Octave span below baseHz at amount = 1 (filter types). */
+  depthOct?: number;
+  /** Fully-open cutoff (Hz) for filter types. */
+  baseHz?: number;
+  /** 0..1 -> filter Q 0.707..~8. */
+  resonance01?: number;
+  /** Phrase types: arc length in bars (of the scene's meter). */
+  lengthBars?: number;
+  /** Phrase types: which end of the loop the arc anchors to. */
+  anchor?: 'loop-start' | 'loop-end';
+  /** Named curve preset (e.g. duck 'subtle' | 'classic' | 'hard'). */
+  presetId?: string;
+  /** Multi-target cyclic types: offset each target's phase for movement. */
+  phaseSpread?: boolean;
+}
+
+/** Reactive-animation trigger sources. @since SDK 2.64.0 */
+export interface AnimationListen {
+  /** Source track DB ids (`SceneTrackSummary.dbId`). Never names. */
+  sources: string[];
+  derive: AnimationListenDerive;
+}
+
+/**
+ * One animation: a type + target tracks + params (+ listen sources for
+ * reactive types). Targets/sources are track DB ids — stable across engine
+ * reloads, resolved and re-validated host-side on every push. The spec is
+ * the persisted user intent; everything derivable (onsets, loop shape,
+ * engine ids) is re-derived on every push and never stored.
+ * @since SDK 2.64.0
+ */
+export interface AnimationSpec {
+  /** Stable identity (uuid) — upsert key and arbitration handle. */
+  id: string;
+  type: AnimationType;
+  enabled: boolean;
+  /** Target track DB ids. */
+  targets: string[];
+  params: AnimationParams;
+  /** Required for reactive types, rejected otherwise. */
+  listen?: AnimationListen;
+}
+
+/** A resolved track reference in the animate census. @since SDK 2.64.0 */
+export interface AnimateTrackRef {
+  dbId: string;
+  /** Display name at read time (display only — never an identity). */
+  name: string;
+  /** True when the dbId no longer resolves in the scene (stale target). */
+  missing: boolean;
+}
+
+/** One animation + its host-derived census. @since SDK 2.64.0 */
+export interface AnimationInfo {
+  spec: AnimationSpec;
+  /** Resolved targets, order matching `spec.targets`. */
+  targets: AnimateTrackRef[];
+  /** Resolved listen sources, order matching `spec.listen.sources`. */
+  sources: AnimateTrackRef[];
+  /** Reactive types: trigger onsets derived at the last push. */
+  onsetCount?: number;
+}
+
+/** The animate surface's full per-scene state. @since SDK 2.64.0 */
+export interface AnimateState {
+  animations: AnimationInfo[];
+}
 
 /** Every generator plugin must implement this interface. */
 export interface GeneratorPlugin {
@@ -1138,6 +1284,52 @@ export interface PluginHost {
   setPanelBusMotion?(sceneId: string, update: PanelBusMotionUpdate): Promise<void>;
 
   // -------------------------------------------------------------------------
+  // Animate — cross-track animation surface. THE deliberate, single,
+  // capability-gated exception to the ownership model: a plugin declaring
+  // `capabilities.crossTrackAutomation` may animate tracks it does not own,
+  // but ONLY through these declarative methods — the host validates every
+  // spec (targets in-project, param ranges, slot conflicts) and compiles it
+  // to deterministic engine configs (track motion / track ducker / volume
+  // curves) that render identically live and offline. Calls from plugins
+  // without the capability throw CAPABILITY_DENIED. Everything optional —
+  // feature-gate on `typeof host.setAnimation === 'function'`.
+  // @since SDK 2.64.0
+  // -------------------------------------------------------------------------
+
+  /**
+   * The scene's animations + resolved census (target/source names, stale
+   * flags, onset counts). Cheap read: persisted specs + DB lookups; never
+   * pushes to the engine. @since SDK 2.64.0
+   */
+  getAnimateState?(sceneId: string): Promise<AnimateState>;
+
+  /**
+   * Upsert one animation by `spec.id` (full-spec replace — the panel always
+   * sends the whole spec) and push its compiled configs to the engine.
+   * Rejects with `VALIDATION_ERROR` on: unknown/unsupported type, empty or
+   * unresolvable targets, params outside their documented ranges, a reactive
+   * type without `listen`, `targets ∩ listen.sources`, or a (target, slot)
+   * already claimed by another enabled animation (the error names it).
+   * Frozen targets auto-unfreeze (sound-edit gate). Returns the new state.
+   * @since SDK 2.64.0
+   */
+  setAnimation?(sceneId: string, spec: AnimationSpec): Promise<AnimateState>;
+
+  /**
+   * Remove one animation and clear every engine slot it had pushed (motion
+   * config idled, curves cleared). Returns the new state. @since SDK 2.64.0
+   */
+  removeAnimation?(sceneId: string, animationId: string): Promise<AnimateState>;
+
+  /**
+   * System-facing re-push: re-derive everything (loop shape, onsets, target
+   * resolution) and push all enabled animations for the scene. The host
+   * calls this automatically on MIDI/track/scene mutations; panels normally
+   * never need it. @since SDK 2.64.0
+   */
+  refreshAnimations?(sceneId: string): Promise<void>;
+
+  // -------------------------------------------------------------------------
   // Track external FX (third-party VST3/AU inserts on ONE track) — the track
   // analogue of the panel-bus FX chain. The built-in FX toggles
   // (getTrackFxState / toggleTrackFx / …) stay as they are; these methods
@@ -1498,6 +1690,30 @@ export interface PluginHost {
    * @since SDK 2.20.0
    */
   openSampleImportWizard?(kind: 'drums' | 'instruments'): void;
+
+  /**
+   * Exact duration / sample rate / channel count of an arbitrary audio file
+   * on disk (any path the plugin can already reach — pack roots, user roots,
+   * its own data dir). Backed by the bundled audio tool's `analyze`
+   * subcommand, so expect one short process spawn (~50-100 ms) per call:
+   * cache results keyed by path rather than re-probing.
+   *
+   * Unlike `PluginSampleInfo.durationSeconds` this works for raw files that
+   * were never imported into the sample library — e.g. a one-shot resolved
+   * straight out of a sample pack folder. Primary use case: end-aligning a
+   * one-shot (riser/sweep) so its natural end lands exactly on the scene
+   * loop boundary.
+   *
+   * Rejects with `VALIDATION_ERROR` when the file does not exist and
+   * `ENGINE_ERROR` when the audio tool is unavailable or cannot decode the
+   * file — treat failures as "duration unknown" and degrade gracefully.
+   *
+   * Optional for older-host compat: feature-check
+   * (`host.getAudioFileInfo?.(...)`).
+   *
+   * @since SDK 2.65.0
+   */
+  getAudioFileInfo?(filePath: string): Promise<PluginAudioFileInfo>;
 
   // --- Deck playback ---
   //
@@ -2979,6 +3195,16 @@ export interface PluginCapabilities {
    * @since SDK 2.1.0
    */
   audioCapture?: boolean;
+  /**
+   * Plugin animates tracks it does not own via the declarative animate
+   * surface (getAnimateState / setAnimation / removeAnimation /
+   * refreshAnimations). THE single sanctioned exception to the ownership
+   * model — granted to the built-in Animate panel; treat any other request
+   * for it as a design smell, not a template. Does NOT unlock any direct
+   * per-track mutator (those stay `assertOwned`-gated).
+   * @since SDK 2.64.0
+   */
+  crossTrackAutomation?: boolean;
 }
 
 // ============================================================================
