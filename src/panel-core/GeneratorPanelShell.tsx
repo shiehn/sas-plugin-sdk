@@ -24,6 +24,7 @@ import { ImportTrackModal } from '../components/ImportTrackModal';
 import { TransitionDesigner } from '../components/TransitionDesigner';
 import { SorceryProgressBar } from '../components/SorceryProgressBar';
 import { PanelMasterStrip } from '../components/PanelMasterStrip';
+import { GroupCollapseChevron } from '../components/GroupCollapseChevron';
 import { usePanelBus } from '../hooks/usePanelBus';
 import type { CrossfadeSlot } from '../crossfade-meta';
 import type { TrackRowDragProps } from '../hooks/useTrackReorder';
@@ -31,6 +32,7 @@ import type { GeneratorTrackState } from './track-state';
 import type { GeneratorPanelCore } from './useGeneratorPanelCore';
 import type { GeneratorPanelSlots, GroupRenderContext, PanelGroupExtension } from './adapter.types';
 import type { ResolvedTrackGroup } from './group-meta';
+import { altGroupCandidates, type AltTrackMeta } from './alt-tracks';
 
 /** Scene-data suffix holding a group's UI state (`track:<groupId>:groupUi`). */
 const GROUP_UI_KEY = 'groupUi';
@@ -84,6 +86,106 @@ function CollapsibleGroup({
   return <>{ext.renderGroup(group, { ...groupCtx, collapsed, onToggleCollapse })}</>;
 }
 
+/**
+ * Alt-track bracket (@since SDK 2.66.0): n interchangeable ALTERNATIVES of
+ * one part, stacked under one header so the grouping is visible at a glance.
+ * Only ONE member sounds at a time — the host rotates them round-robin, one
+ * per loop cycle, and the arranger staggers them across the arrangement.
+ *
+ * The ● marks whichever member is currently audible. It is DERIVED from
+ * runtime mute state (the host's rotation is engine-only and pushes
+ * trackStateChanged), never from local state — so the dot tracks the actual
+ * sound even when rotation advances from outside this panel.
+ */
+function AltTrackGroup({
+  group,
+  pinned,
+  accentColor,
+  collapsed,
+  onToggleCollapse,
+  onTogglePin,
+  onRemoveMember,
+  renderRow,
+}: {
+  group: ResolvedTrackGroup<AltTrackMeta, GeneratorTrackState>;
+  pinned: boolean;
+  accentColor?: string;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  onTogglePin: () => void;
+  onRemoveMember: (trackId: string) => void;
+  renderRow: (track: GeneratorTrackState) => ReactNode;
+}): React.ReactElement {
+  const activeDbId =
+    group.members.find((m) => !m.track.runtimeState.muted)?.dbId ?? null;
+  return (
+    <div
+      data-testid={`sdk-alt-group-${group.groupId}`}
+      className="border border-sas-border rounded-sm mb-1"
+      style={accentColor ? { borderLeft: `2px solid ${accentColor}` } : undefined}
+    >
+      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-sas-border">
+        <GroupCollapseChevron
+          what="alternatives"
+          collapsed={collapsed}
+          onToggle={onToggleCollapse}
+        />
+        <span className="text-[10px] uppercase tracking-wide text-sas-muted">
+          Alternatives · {group.members.length} · round-robin
+        </span>
+        <div className="flex-1" />
+        <button
+          data-testid={`sdk-alt-group-pin-${group.groupId}`}
+          onClick={onTogglePin}
+          aria-pressed={pinned}
+          title={
+            pinned
+              ? 'Pinned — the current alternative keeps playing. Click to resume rotating each loop.'
+              : 'Pin this group: hold the current alternative while the full mix plays (soloing pauses rotation too).'
+          }
+          className={`px-1.5 py-0.5 text-[10px] rounded-sm border transition-colors ${
+            pinned
+              ? 'text-sas-accent border-sas-accent'
+              : 'text-sas-muted border-sas-border hover:text-sas-accent hover:border-sas-accent'
+          }`}
+        >
+          {pinned ? '📌 Pinned' : 'Pin'}
+        </button>
+      </div>
+      {!collapsed && (
+        <div className="p-1 space-y-1">
+          {group.members.map((member) => (
+            <div key={member.dbId} className="flex items-start gap-1">
+              <span
+                data-testid={`sdk-alt-active-${member.dbId}`}
+                title={
+                  member.dbId === activeDbId
+                    ? 'Playing this loop'
+                    : 'Silent this loop — waiting its turn'
+                }
+                className={`mt-2 text-[10px] leading-none ${
+                  member.dbId === activeDbId ? 'text-sas-accent' : 'text-sas-muted/30'
+                }`}
+              >
+                ●
+              </span>
+              <div className="flex-1 min-w-0">{renderRow(member.track)}</div>
+              <button
+                data-testid={`sdk-alt-remove-${member.dbId}`}
+                onClick={() => onRemoveMember(member.track.handle.id)}
+                title="Remove from this alternatives group (it plays with the mix again)"
+                className="mt-1 px-1 text-[10px] text-sas-muted hover:text-sas-accent transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export interface GeneratorPanelShellProps {
   core: GeneratorPanelCore;
   slots?: GeneratorPanelSlots;
@@ -123,6 +225,13 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
     fadeMemberDbIds,
     resolvedGenericGroups,
     genericGroupMemberDbIds,
+    resolvedAltGroups,
+    altGroupMemberDbIds,
+    altGroupPins,
+    altTracksEnabled,
+    groupAlternatives,
+    removeAlternative,
+    setAltGroupPinned,
     groupBroadcast,
     availableInstruments,
     instrumentsLoading,
@@ -149,6 +258,13 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
   // which also keeps the Phase-0 pin harness (mock host) byte-identical.
   const panelBus = usePanelBus(host, activeSceneId);
   const { identity, features } = adapter;
+  // Alt-group collapse is view-local (a glance-level affordance, not document
+  // state) — unlike the generic CollapsibleGroup, which persists per group
+  // because those families have no other home for their UI flags.
+  const [collapsedAltGroups, setCollapsedAltGroups] = useState<Record<string, boolean>>({});
+  const toggleAltGroupCollapsed = useCallback((groupId: string): void => {
+    setCollapsedAltGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+  }, []);
 
   // --- The ONE default TrackRow props builder ------------------------------
   // Byte-identical to the monolith's duplicated prop blocks; the Phase-0
@@ -175,6 +291,33 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
         ? {
             onImportSound: () => setSoundImportTarget(track),
             importSoundLabel: adapter.sound.importSoundLabel,
+          }
+        : {};
+      // Alternatives section in the FX drawer. Candidates are pre-filtered to
+      // what the host will accept (same panel, not already in another group),
+      // so nothing offered here can fail.
+      const altTrackProps = altTracksEnabled
+        ? {
+            altTracks: {
+              members: (
+                resolvedAltGroups.find((g) => g.groupId === track.handle.altGroupId)?.members ?? []
+              ).map((m) => ({
+                trackId: m.track.handle.id,
+                dbId: m.dbId,
+                name: m.track.handle.name,
+              })),
+              candidates: altGroupCandidates(tracks, track).map((t) => ({
+                trackId: t.handle.id,
+                dbId: t.handle.dbId,
+                name: t.handle.name,
+              })),
+              onGroup: (otherTrackId: string) => {
+                void groupAlternatives([id, otherTrackId]);
+              },
+              onUngroup: () => {
+                void removeAlternative(id);
+              },
+            },
           }
         : {};
       const props: SDKTrackRowProps = {
@@ -216,6 +359,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
         onProgressChange: (pct: number) => handlers.progressChange(id, pct),
         accentColor: identity.accentColor,
         ...pickerProps,
+        ...altTrackProps,
         soundHistory: soundHistory.list(id).entries,
         soundHistoryCursor: soundHistory.list(id).cursor,
         onRestoreSound: (i: number) => {
@@ -256,6 +400,11 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
       handleFxPresetChange,
       handleFxDryWetChange,
       onAuditionNote,
+      altTracksEnabled,
+      resolvedAltGroups,
+      tracks,
+      groupAlternatives,
+      removeAlternative,
     ],
   );
 
@@ -648,11 +797,32 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
                   />
                 )),
             )}
+            {resolvedAltGroups.map((group) => (
+              <AltTrackGroup
+                key={`alt:${group.groupId}`}
+                group={group}
+                pinned={altGroupPins[group.groupId] === true}
+                accentColor={identity.accentColor}
+                collapsed={collapsedAltGroups[group.groupId] === true}
+                onToggleCollapse={() => toggleAltGroupCollapsed(group.groupId)}
+                onTogglePin={() => {
+                  void setAltGroupPinned(group.groupId, altGroupPins[group.groupId] !== true);
+                }}
+                onRemoveMember={(trackId) => {
+                  void removeAlternative(trackId);
+                }}
+                // Members are ordinary rows — every per-track control keeps
+                // working inside the bracket. No drag props: like every other
+                // group row, members are not reorderable.
+                renderRow={(track) => <TrackRow {...buildRowProps(track)} />}
+              />
+            ))}
             {tracks.map((track: GeneratorTrackState, index: number) => {
               if (
                 crossfadeMemberDbIds.has(track.handle.dbId) ||
                 fadeMemberDbIds.has(track.handle.dbId) ||
-                genericGroupMemberDbIds.has(track.handle.dbId)
+                genericGroupMemberDbIds.has(track.handle.dbId) ||
+                altGroupMemberDbIds.has(track.handle.dbId)
               ) {
                 return null;
               }

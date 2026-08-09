@@ -284,6 +284,11 @@ export { VolumeSlider } from './components/VolumeSlider';
 export { PanelMasterStrip, type PanelMasterStripProps } from './components/PanelMasterStrip';
 export { usePanelBus, type UsePanelBusResult } from './hooks/usePanelBus';
 export { TrackExternalFxSection, type TrackExternalFxSectionProps } from './components/TrackExternalFxSection';
+export {
+  TrackAlternativesSection,
+  type TrackAlternativesSectionProps,
+  type AltTrackOption,
+} from './components/TrackAlternativesSection';
 export { useTrackExternalFx, type UseTrackExternalFxResult } from './hooks/useTrackExternalFx';
 export { TrackFreezeSection, type TrackFreezeSectionProps } from './components/TrackFreezeSection';
 export { useTrackFreeze, type UseTrackFreezeResult } from './hooks/useTrackFreeze';

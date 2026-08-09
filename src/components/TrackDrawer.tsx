@@ -24,6 +24,10 @@ import type { FxCategory, TrackFxDetailState } from '../types/fx-toggle.types';
 import { FxToggleBar } from './FxToggleBar';
 import { PianoRollEditor } from './PianoRollEditor';
 import { TrackExternalFxSection } from './TrackExternalFxSection';
+import {
+  TrackAlternativesSection,
+  type TrackAlternativesSectionProps,
+} from './TrackAlternativesSection';
 import { TrackFreezeSection } from './TrackFreezeSection';
 import { useTrackFreeze, type UseTrackFreezeResult } from '../hooks/useTrackFreeze';
 
@@ -69,6 +73,15 @@ export interface TrackDrawerProps {
    * FX tab.
    */
   externalFxHost?: PluginHost;
+
+  /**
+   * Alt-track grouping controls under the FX section (@since SDK 2.66.0):
+   * make this track one of n interchangeable ALTERNATIVES that rotate
+   * one-per-loop instead of playing together. Omit to hide the section — the
+   * panel-core supplies it only when the panel opts in via
+   * `features.altTracks` AND the host implements the surface.
+   */
+  altTracks?: Omit<TrackAlternativesSectionProps, 'trackId' | 'disabled'>;
 
   /**
    * Lifted freeze state (@since SDK 2.47.0) — TrackRow owns useTrackFreeze
@@ -153,6 +166,7 @@ export function TrackDrawer({
   onFxDryWetChange,
   fxDisabled = false,
   externalFxHost,
+  altTracks,
   freeze,
   instruments = [],
   currentPluginId = null,
@@ -309,6 +323,7 @@ export function TrackDrawer({
           error={fz.error}
           onFreeze={() => void fz.freeze()}
           onUnfreeze={() => void fz.unfreeze()}
+          onForceRefreeze={fz.forceRefreeze ? () => void fz.forceRefreeze!() : undefined}
         />
       </div>
     );
@@ -376,6 +391,9 @@ export function TrackDrawer({
         />
         {externalFxHost && (
           <TrackExternalFxSection host={externalFxHost} trackId={trackId} disabled={fxDisabled} />
+        )}
+        {altTracks && (
+          <TrackAlternativesSection {...altTracks} trackId={trackId} disabled={fxDisabled} />
         )}
       </div>
     );

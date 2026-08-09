@@ -61,6 +61,12 @@ export {
   type ResolveGroupsOptions,
   type ResolvedGroupsResult,
 } from './group-meta';
+export {
+  altGroupsFromTracks,
+  altGroupCandidates,
+  type AltTrackMeta,
+  type AltTrackCandidate,
+} from './alt-tracks';
 export type {
   PanelIdentity,
   PanelFeatureFlags,

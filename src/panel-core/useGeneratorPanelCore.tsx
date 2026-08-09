@@ -44,6 +44,7 @@ import {
   type ResolvedGroupsResult,
   type ResolvedTrackGroup,
 } from './group-meta';
+import { altGroupsFromTracks, type AltTrackMeta } from './alt-tracks';
 import type {
   GeneratorPanelAdapter,
   GenerationServices,
@@ -130,6 +131,25 @@ export interface GeneratorPanelCore {
   // Generic group extensions
   resolvedGenericGroups: Record<string, ResolvedGroupsResult<unknown, GeneratorTrackState>>;
   genericGroupMemberDbIds: Set<string>;
+
+  /**
+   * Alt-track groups (round-robin alternatives) resolved against live tracks,
+   * empty unless `features.altTracks` and the host supports the surface.
+   * @since SDK 2.66.0
+   */
+  resolvedAltGroups: ResolvedTrackGroup<AltTrackMeta, GeneratorTrackState>[];
+  /** dbIds rendered inside an alt bracket — excluded from the normal rows. @since SDK 2.66.0 */
+  altGroupMemberDbIds: Set<string>;
+  /** groupId → rotation pinned (holds the current member). @since SDK 2.66.0 */
+  altGroupPins: Record<string, boolean>;
+  /** True when this panel + host both support alternatives. @since SDK 2.66.0 */
+  altTracksEnabled: boolean;
+  /** Group n owned tracks (engine ids) as alternatives, then reload. @since SDK 2.66.0 */
+  groupAlternatives: (trackIds: readonly string[]) => Promise<void>;
+  /** Remove one member from its alt group, then reload. @since SDK 2.66.0 */
+  removeAlternative: (trackId: string) => Promise<void>;
+  /** Pin/unpin a group's rotation. @since SDK 2.66.0 */
+  setAltGroupPinned: (groupId: string, pinned: boolean) => Promise<void>;
 
   /**
    * Live progress of a linked-group broadcast (a sound or instrument being
@@ -960,6 +980,81 @@ export function useGeneratorPanelCore({
     }
     return s;
   }, [resolvedGenericGroups]);
+
+  // --- Alt-track groups (round-robin alternatives) -------------------------
+  // Membership rides the track handles (host columns), not scene-data, so
+  // there is nothing to parse asynchronously — the metas are derived from the
+  // same `tracks` array every render and flow through the shared resolver.
+  const altTracksEnabled =
+    adapter.features.altTracks === true && typeof host.groupTrackAlternatives === 'function';
+
+  const resolvedAltGroupsResult = useMemo(() => {
+    if (!altTracksEnabled) {
+      return { resolved: [], memberDbIds: new Set<string>(), staleMemberDbIds: [] };
+    }
+    return resolveTrackGroups<AltTrackMeta, GeneratorTrackState>(
+      altGroupsFromTracks(tracks),
+      tracks,
+      (t) => t.handle.dbId,
+    );
+  }, [altTracksEnabled, tracks]);
+  const resolvedAltGroups = resolvedAltGroupsResult.resolved;
+  const altGroupMemberDbIds = resolvedAltGroupsResult.memberDbIds;
+
+  const [altGroupPins, setAltGroupPins] = useState<Record<string, boolean>>({});
+  // Pins are transient host state (reset on relaunch) — re-read whenever the
+  // resolved groups change so a scene switch or regroup can't show a stale 📌.
+  const altGroupKey = resolvedAltGroups.map((g) => g.groupId).join('|');
+  useEffect(() => {
+    if (!altTracksEnabled || !activeSceneId || typeof host.getAltGroupPinStates !== 'function') {
+      setAltGroupPins({});
+      return undefined;
+    }
+    let cancelled = false;
+    void host
+      .getAltGroupPinStates()
+      .then((pins) => {
+        if (!cancelled) setAltGroupPins(pins ?? {});
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [host, activeSceneId, altTracksEnabled, altGroupKey]);
+
+  const groupAlternatives = useCallback(
+    async (trackIds: readonly string[]): Promise<void> => {
+      if (typeof host.groupTrackAlternatives !== 'function') return;
+      await host.groupTrackAlternatives(trackIds);
+      await loadTracks();
+    },
+    [host, loadTracks],
+  );
+
+  const removeAlternative = useCallback(
+    async (trackId: string): Promise<void> => {
+      if (typeof host.removeTrackAlternative !== 'function') return;
+      await host.removeTrackAlternative(trackId);
+      await loadTracks();
+    },
+    [host, loadTracks],
+  );
+
+  const setAltGroupPinned = useCallback(
+    async (groupId: string, pinned: boolean): Promise<void> => {
+      if (typeof host.setAltGroupPinned !== 'function') return;
+      // Optimistic: the pin is in-memory host state with no other observer,
+      // so echoing it immediately keeps the toggle responsive.
+      setAltGroupPins((prev) => ({ ...prev, [groupId]: pinned }));
+      try {
+        await host.setAltGroupPinned(groupId, pinned);
+      } catch (err) {
+        setAltGroupPins((prev) => ({ ...prev, [groupId]: !pinned }));
+        throw err;
+      }
+    },
+    [host],
+  );
 
   // --- Services factory ---------------------------------------------------
   const engineToDbId = useCallback(
@@ -1917,6 +2012,13 @@ export function useGeneratorPanelCore({
     resolvedGroupFades,
     resolvedGenericGroups,
     genericGroupMemberDbIds,
+    resolvedAltGroups,
+    altGroupMemberDbIds,
+    altGroupPins,
+    altTracksEnabled,
+    groupAlternatives,
+    removeAlternative,
+    setAltGroupPinned,
     groupBroadcast,
     availableInstruments,
     instrumentsLoading,

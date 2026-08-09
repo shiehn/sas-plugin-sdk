@@ -721,6 +721,51 @@ export interface PluginHost {
   reorderTracks(orderedTrackIds: readonly string[]): Promise<void>;
 
   /**
+   * Group owned tracks of the active scene as ALTERNATIVES: n interchangeable
+   * variants of one part (e.g. two Lead presets) that must never play
+   * simultaneously. During loop-a playback the host rotates the group
+   * round-robin — one member per loop cycle — and the arranger receives the
+   * grouping to stagger members across the arrangement for variety.
+   *
+   * Pass ≥2 engine track ids ({@link PluginTrackHandle.id}). When no input is
+   * grouped yet, a fresh group is created in the given order. When the inputs
+   * include members of exactly ONE existing group, ungrouped inputs join that
+   * group (appended to its order). Inputs spanning two existing groups are
+   * rejected with VALIDATION_ERROR — ungroup first.
+   *
+   * v1 scope: all members must belong to this plugin (same-panel groups).
+   * Membership lands on the track rows (`altGroupId`/`altGroupOrder` on
+   * {@link PluginTrackHandle}) — refresh via {@link getPluginTracks}.
+   * @since SDK 2.66.0
+   */
+  groupTrackAlternatives?(trackIds: readonly string[]): Promise<void>;
+
+  /**
+   * Remove one owned track from its alt group. If a single member remains
+   * afterwards the group dissolves (a singleton is not a group). No-op when
+   * the track is not grouped.
+   * @since SDK 2.66.0
+   */
+  removeTrackAlternative?(trackId: string): Promise<void>;
+
+  /**
+   * Pin/unpin an alt group: while pinned, round-robin rotation holds the
+   * currently-active member while the full mix keeps playing (unlike solo,
+   * which both pauses rotation AND isolates what you hear). Transient
+   * playback state — resets on app restart; does not affect renders (loop-b
+   * bakes always capture the lowest-order non-muted member).
+   * @since SDK 2.66.0
+   */
+  setAltGroupPinned?(groupId: string, pinned: boolean): Promise<void>;
+
+  /**
+   * Pin states for the active scene's alt groups (groupId → pinned). Groups
+   * that were never pinned are absent.
+   * @since SDK 2.66.0
+   */
+  getAltGroupPinStates?(): Promise<Record<string, boolean>>;
+
+  /**
    * Return the canonical list of valid role tokens that the host's
    * classifier and UI understand. Plugins should use this list when
    * building LLM prompts or validating role values before calling
@@ -1400,7 +1445,16 @@ export interface PluginHost {
    * while fresh; re-freezing a stale track re-renders. Refused for
    * sample/audio tracks and transition scenes (message explains why).
    */
-  freezeTrack?(trackId: string): Promise<TrackFreezeState>;
+  freezeTrack?(
+    trackId: string,
+    /**
+     * `force: true` renders a NEW stem even when the freeze hash is
+     * unchanged (@since 2.67.0). Staleness is derived from what reaches the
+     * database, so a third-party instrument's patch edited in ITS OWN window
+     * is invisible to it — this is the user's "I know it changed" override.
+     */
+    options?: { force?: boolean }
+  ): Promise<TrackFreezeState>;
 
   /**
    * Unfreeze: stem out, plugin chain (incl. per-FX bypass flags) restored;
@@ -2265,6 +2319,21 @@ export interface PluginTrackHandle {
   instrumentPluginId?: string | null;
   /** Custom instrument display name (null = Surge XT) */
   instrumentName?: string | null;
+  /**
+   * Alt-track group membership: opaque group id shared by all members, or
+   * null/absent when not grouped. Grouped tracks are interchangeable
+   * ALTERNATIVES — never played simultaneously; the host round-robins one
+   * member per loop cycle and the arranger staggers members across the
+   * arrangement. See {@link PluginHost.groupTrackAlternatives}.
+   * @since SDK 2.66.0
+   */
+  altGroupId?: string | null;
+  /**
+   * Stable rotation/display order within the alt group (lowest = the member
+   * that plays first and the one loop-b renders bake).
+   * @since SDK 2.66.0
+   */
+  altGroupOrder?: number | null;
 }
 
 /**

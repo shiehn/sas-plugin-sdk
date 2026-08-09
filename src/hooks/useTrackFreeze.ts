@@ -21,6 +21,13 @@ export interface UseTrackFreezeResult {
   refresh: () => Promise<void>;
   freeze: () => Promise<void>;
   unfreeze: () => Promise<void>;
+  /**
+   * Render a NEW stem even though nothing detectable changed (@since 2.67.0).
+   * The escape hatch for sound the app cannot see move — a third-party
+   * instrument's patch edited in its own window. `undefined` when the host
+   * predates the option, so callers can hide the control.
+   */
+  forceRefreeze?: () => Promise<void>;
 }
 
 export function useTrackFreeze(host: PluginHost | undefined, trackId: string): UseTrackFreezeResult {
@@ -56,14 +63,18 @@ export function useTrackFreeze(host: PluginHost | undefined, trackId: string): U
   }, [enabled, refresh]);
 
   const run = useCallback(
-    async (action: 'freeze' | 'unfreeze'): Promise<void> => {
+    async (action: 'freeze' | 'unfreeze', force?: boolean): Promise<void> => {
       if (!host) return;
       const method = action === 'freeze' ? host.freezeTrack : host.unfreezeTrack;
       if (typeof method !== 'function') return;
       setBusy(action);
       setError(null);
       try {
-        setState(await method.call(host, trackId));
+        setState(
+          action === 'freeze' && force
+            ? await host.freezeTrack!.call(host, trackId, { force: true })
+            : await method.call(host, trackId)
+        );
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         void refresh();
@@ -76,6 +87,21 @@ export function useTrackFreeze(host: PluginHost | undefined, trackId: string): U
 
   const freeze = useCallback((): Promise<void> => run('freeze'), [run]);
   const unfreeze = useCallback((): Promise<void> => run('unfreeze'), [run]);
+  const forceRefreeze = useCallback((): Promise<void> => run('freeze', true), [run]);
 
-  return { enabled, state, busy, error, refresh, freeze, unfreeze };
+  // The host's freezeTrack takes the options argument from 2.67.0 on. An
+  // older host would silently ignore `force` and reuse the cached stem — the
+  // exact wrong outcome — so the action is withheld rather than lying.
+  const supportsForce = (host?.freezeTrack?.length ?? 0) >= 2;
+
+  return {
+    enabled,
+    state,
+    busy,
+    error,
+    refresh,
+    freeze,
+    unfreeze,
+    ...(supportsForce ? { forceRefreeze } : {}),
+  };
 }

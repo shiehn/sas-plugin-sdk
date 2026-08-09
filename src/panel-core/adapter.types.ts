@@ -123,6 +123,19 @@ export interface PanelFeatureFlags {
    * inert on pre-2.54 hosts. @since 2.54.0
    */
   busMotion?: boolean;
+  /**
+   * Opt into ALT-TRACK groups: the drawer's "Alternatives" section (pick
+   * another of this panel's tracks) plus the stacked bracket row that renders
+   * a group's members together. Grouped tracks are interchangeable variants
+   * of one part — round-robined one-per-loop by the host and staggered across
+   * the arrangement by the arranger.
+   *
+   * Unlike `groupExtensions` families, membership is first-class HOST state
+   * (track columns), so the panel supplies no parser or renderer — the shell
+   * owns both. The shell also gates on host support, leaving the flag inert
+   * on pre-2.66 hosts. @since 2.66.0
+   */
+  altTracks?: boolean;
 }
 
 // ============================================================================

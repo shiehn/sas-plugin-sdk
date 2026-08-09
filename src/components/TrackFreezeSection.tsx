@@ -20,6 +20,12 @@ export interface TrackFreezeSectionProps {
   error: string | null;
   onFreeze: () => void;
   onUnfreeze: () => void;
+  /**
+   * Render a NEW stem even though nothing detectable changed (@since 2.67.0).
+   * Omitted when the host predates the option — the control then hides rather
+   * than silently doing an ordinary (cache-reusing) freeze.
+   */
+  onForceRefreeze?: () => void;
 }
 
 const STALE_LABELS: Record<string, string> = {
@@ -28,6 +34,8 @@ const STALE_LABELS: Record<string, string> = {
   instrument: 'instrument changed',
   'external-fx': 'FX changed',
   role: 'role changed',
+  sound: 'sound changed',
+  animate: 'animation changed',
 };
 
 export function TrackFreezeSection({
@@ -36,11 +44,21 @@ export function TrackFreezeSection({
   error,
   onFreeze,
   onUnfreeze,
+  onForceRefreeze,
 }: TrackFreezeSectionProps): React.ReactElement {
   const frozen = state?.frozen === true;
   const stale = frozen && state?.stale === true;
   const missing = state?.missingDeps ?? [];
   const unfreezeBlocked = frozen && missing.length > 0;
+
+  // Staleness is derived from what reaches the database. A third-party
+  // instrument's patch edited in ITS OWN window never touches the database, so
+  // the freeze looks fresh while the stem plays the previous sound. Offer the
+  // override exactly where that trap lives: a freeze that claims to be current
+  // (frozen + fresh), and a live track whose cached stem would make the next
+  // freeze "instant" — instant means re-using that same possibly-wrong stem.
+  const cacheWouldBeTrusted =
+    !!onForceRefreeze && !!state && ((frozen && !stale) || (!frozen && state.latentFreshFreeze));
 
   const statusLine = !state
     ? 'Reading freeze state…'
@@ -106,6 +124,19 @@ export function TrackFreezeSection({
         {primaryLabel}
       </button>
 
+      {cacheWouldBeTrusted && (
+        <button
+          type="button"
+          data-testid="sdk-freeze-force"
+          disabled={busy !== null}
+          onClick={onForceRefreeze}
+          className="w-full py-1.5 text-[11px] rounded-sm border border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent transition-colors"
+          title="Renders a new stem even though nothing detectable changed. Use it when you edited the instrument inside its own plugin window — the app cannot see that, so the freeze still looks current."
+        >
+          {busy === 'freeze' ? 'Rendering stem…' : '↻ Force re-render stem'}
+        </button>
+      )}
+
       {frozen && stale && !unfreezeBlocked && (
         <button
           type="button"
@@ -127,6 +158,9 @@ export function TrackFreezeSection({
       <p className="text-[10px] text-sas-muted/50 leading-snug">
         Frozen tracks survive missing plugins and travel inside project backups. The stem is kept
         after unfreezing, so re-freezing an unchanged track is instant.
+        {cacheWouldBeTrusted
+          ? ' Edits made inside a plugin’s own window are invisible here — force a re-render if the frozen sound is out of date.'
+          : ''}
       </p>
     </div>
   );

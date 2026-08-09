@@ -4,6 +4,69 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 2.67.0 — Forced re-freeze, for sound the app cannot see move
+
+Freeze staleness is derived from what reaches the database. A third-party
+instrument's patch edited in ITS OWN window (Massive X, Kontakt, Diva…) never
+touches the database, so the freeze keeps claiming to be fresh while the stem
+plays the previous sound — and a cached stem makes the next freeze "instant"
+by re-using exactly that possibly-wrong render. This release adds the user's
+"I know it changed" override.
+
+- **`host.freezeTrack(trackId, { force: true })`** — renders a NEW stem even
+  when the freeze hash is unchanged. The one-argument call is unchanged.
+- **`useTrackFreeze().forceRefreeze`** — the hook's action for it, and
+  `TrackFreezeSection`'s `onForceRefreeze` prop. Both are `undefined` on hosts
+  that predate the option (detected via `freezeTrack.length`) rather than
+  silently degrading to an ordinary cache-reusing freeze, so a panel can hide
+  the control instead of lying about what it does.
+- **`TrackFreezeSection`** renders the override exactly where the trap lives —
+  a freeze that claims to be current, or a live track whose cached stem would
+  make the next freeze instant — and learned two new staleness labels,
+  `sound` ("sound changed") and `animate` ("animation changed").
+
+## 2.66.0 — Alt-tracks: interchangeable alternatives that rotate, not stack
+
+Until now every track in a scene played simultaneously. **Alt-tracks** name the
+other case: n tracks that are interchangeable variants of ONE part — a second
+Lead with a different preset — equally good, filling the same role, and never
+meant to sound together. The host rotates a group round-robin (one member per
+loop cycle on loop-a) and the arranger receives the grouping so it staggers
+members across an arrangement instead of layering them.
+
+Membership is **first-class host state**, not panel scene-data: it lives on the
+track rows (host Migration 080) precisely so the arranger can consume it. That
+makes this the one group family the panel does not parse — the shell owns both
+the model and the rendering.
+
+- **`PluginTrackHandle.altGroupId` / `.altGroupOrder`** — membership + rotation
+  order (lowest plays first, and is the member a render bakes) on every handle
+  from `getPluginTracks` / `adoptSceneTracks`.
+- **`host.groupTrackAlternatives(trackIds)`** — group ≥2 OWNED tracks of the
+  active scene. Creates a group, or extends when the inputs touch exactly one
+  existing group; rejects inputs spanning two groups (`VALIDATION_ERROR` —
+  ungroup first). v1 is same-panel only.
+- **`host.removeTrackAlternative(trackId)`** — leave a group; a lone remaining
+  member dissolves it (one alternative is not an alternative).
+- **`host.setAltGroupPinned(groupId, pinned)` / `host.getAltGroupPinStates()`**
+  — hold the current member while the FULL mix keeps playing. Distinct from
+  solo, which also pauses rotation but isolates what you hear. Transient
+  playback state: it resets on relaunch and never affects renders.
+- **`features.altTracks`** opts a panel in. No parser or renderer required —
+  the shell renders the stacked bracket (member rows, a ● on whoever is
+  audible, pin, per-member remove) and `TrackAlternativesSection` in the FX
+  drawer's tab. Inert on hosts without the surface.
+- **`TrackAlternativesSection`** is exported for direct use; `altGroupsFromTracks`
+  / `altGroupCandidates` are the pure helpers behind it.
+
+The ● is derived from runtime mute state rather than local state, so it tracks
+what is actually sounding even when rotation advances from outside the panel.
+
+Also fixes a long-standing drift: `PLUGIN_SDK_VERSION` had been stuck at
+`2.55.0` while the package version moved on. Both now read 2.66.0.
+
+First consumer is the Synth panel (`@signalsandsorcery/synth-generator`).
+
 ## 2.65.0 — Exact media properties for raw audio files
 
 `PluginSampleInfo.durationSeconds` only covers files that were imported into

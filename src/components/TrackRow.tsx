@@ -12,7 +12,7 @@
 
 import React from 'react';
 import { AlertCircle, ChevronDown, GripVertical } from 'lucide-react';
-import { TrackDrawer, type DrawerTab } from './TrackDrawer';
+import { TrackDrawer, type DrawerTab, type TrackDrawerProps } from './TrackDrawer';
 import { ConfirmDialog } from './ConfirmDialog';
 import { TrackMeterStrip } from './TrackMeterStrip';
 import type { TrackLevelsHandle } from '../hooks/useTrackLevels';
@@ -92,6 +92,9 @@ export interface SDKTrackRowProps {
    *  (self-contained; renders nothing on hosts without the surface).
    *  @since SDK 2.39.0 */
   externalFxHost?: PluginHost;
+  /** Alt-track grouping controls in the drawer's FX tab (@since SDK 2.66.0) —
+   *  supplied by panel-core when the panel opts into `features.altTracks`. */
+  altTracks?: TrackDrawerProps['altTracks'];
   /** Open/close FX (optional — omit to hide FX button) */
   onToggleFxDrawer?: () => void;
   /** Progress persistence callback */
@@ -212,6 +215,7 @@ export function TrackRow({
   onFxPresetChange,
   onFxDryWetChange,
   externalFxHost,
+  altTracks,
   onToggleFxDrawer,
   onProgressChange,
   accentColor = '#A78BFA',
@@ -632,6 +636,7 @@ export function TrackRow({
             onFxPresetChange={onFxPresetChange}
             onFxDryWetChange={onFxDryWetChange}
             externalFxHost={externalFxHost}
+            altTracks={altTracks}
             freeze={freeze}
             fxDisabled={isGenerating}
             instruments={availableInstruments}
