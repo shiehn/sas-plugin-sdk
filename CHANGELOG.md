@@ -4,6 +4,36 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 2.68.0 — Import Track reaches the stamping hook
+
+`onTrackCreated` has always documented itself as running on "Add Track /
+Import Track", but the cross-scene import path never called it: the shell's
+`onImported` just reloaded. For plain families that was invisible. For a GROUP
+family it is not — the host's copy brings every `track:<sourceDbId>:*` key
+across with the values untouched, so the newborn still carries a group meta
+naming the SOURCE scene's anchor. It joins a group that does not exist here,
+or (as a non-anchor voice) resolves to an incomplete one and degrades to a
+loose row.
+
+- **`core.handleImportedTrack(handle)`** — the shell now wires it as the
+  ImportTrackModal's `onImported`: run the family's `onTrackCreated`, then
+  reload. Panels that hand the core straight to `GeneratorPanelShell` get it
+  with no change.
+- **`TrackCreatedContext.origin`** — `'add' | 'import' | 'port'`, so a family
+  can stamp only the newborns that arrive carrying content. The bass panel
+  anchors imports and ports as a voice-group of one while Add stays a plain
+  row until the first generation; the arp panel ignores `origin` and keeps
+  anchoring all three. Implementations that predate the field are unaffected.
+- **`applyPortedTrackSound(handle, role, source)`** — the port flow now hands
+  the adapter a `PortedTrackSource` (the source track's dbId + name), so a
+  family whose instrument can host the source's patch may inherit it via
+  `host.getTrackSound` instead of picking a fresh sound. The core stays
+  policy-free: it passes the selector, the family decides, and nothing carries
+  across unless an implementation asks. Bass is the first to take it up —
+  ported parts keep a Surge patch and fall back to a shuffle for anything
+  else. The third parameter is optional; two-parameter implementations
+  (synth, drum, instrument, …) are unchanged.
+
 ## 2.67.0 — Forced re-freeze, for sound the app cannot see move
 
 Freeze staleness is derived from what reaches the database. A third-party

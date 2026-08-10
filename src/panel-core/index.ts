@@ -80,6 +80,7 @@ export type {
   GeneratorPanelAdapter,
   GeneratorPanelSlots,
   TrackCreatedContext,
+  PortedTrackSource,
   VerbatimFadeMember,
   PanelTransitionGroupAdapter,
 } from './adapter.types';

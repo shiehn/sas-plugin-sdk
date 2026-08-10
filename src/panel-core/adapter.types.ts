@@ -431,12 +431,41 @@ export interface PanelTransitionGroupAdapter {
 // The adapter
 // ============================================================================
 
+/**
+ * The track a cross-panel port was pulled from, handed to
+ * `applyPortedTrackSound` so a family can decide whether the source's SOUND
+ * travels with the MIDI. @since SDK 2.68.0
+ */
+export interface PortedTrackSource {
+  /** Source track's DB row id — the selector for `host.getTrackSound`. */
+  trackDbId: string;
+  /** Source track's display name (toasts / history labels). */
+  trackName: string;
+}
+
 /** What `onTrackCreated` gets to work with (Add Track is scene-gated, so the scene is non-null). */
 export interface TrackCreatedContext {
   /** Scene the track was created in. */
   activeSceneId: string;
   /** The ONE scene-data key builder (always dbId-based). */
   trackDataKey: (dbId: string, suffix: string) => string;
+  /**
+   * How the track was born (@since SDK 2.68.0):
+   *
+   *   'add'    — the header's Add Track button (an EMPTY track).
+   *   'import' — a faithful cross-scene copy of one of this family's own
+   *              tracks (`host.importTrack`): MIDI, preset, FX and the source's
+   *              per-track scene-data all came across, keyed to the new dbId.
+   *   'port'   — a cross-panel re-sound: MIDI + role copied from ANOTHER
+   *              panel's track in this scene, sounded on a fresh family
+   *              instrument (`applyPortedTrackSound`).
+   *
+   * Group families use it to stamp only the newborns that arrive carrying
+   * content: bass anchors imports/ports as a voice-group of one, while Add
+   * stays a plain row until the first generation. Pre-2.68 implementations
+   * that ignore it keep behaving identically for all three.
+   */
+  origin: 'add' | 'import' | 'port';
 }
 
 export interface GeneratorPanelAdapter<M = unknown> {
@@ -447,12 +476,25 @@ export interface GeneratorPanelAdapter<M = unknown> {
   /**
    * Port-flow sound step after the MIDI copy (cross-panel Import Track).
    * Synth: `host.shufflePreset(handle.id)` non-fatal.
+   *
+   * `source` (@since SDK 2.68.0) names the track the part came from, so a
+   * family that CAN inherit the source's sound may read it via
+   * `host.getTrackSound(source.trackDbId)` instead of picking a fresh one —
+   * the bass panel does this when the source is Surge-state (its own tracks
+   * host Surge XT, so the patch transfers). The core stays policy-free: it
+   * hands over the selector and the family decides. Nothing carries across
+   * unless an implementation asks for it.
    */
-  applyPortedTrackSound(handle: PluginTrackHandle, role?: string): Promise<void>;
+  applyPortedTrackSound(
+    handle: PluginTrackHandle,
+    role?: string,
+    source?: PortedTrackSource,
+  ): Promise<void>;
   /**
-   * Optional hook run right after a track is born (Add Track / Import Track).
-   * Lets a family stamp per-track scene-data on the newborn — e.g. the arp
-   * panel anchors every new track as a voice-group of ONE so the group
+   * Optional hook run right after a track is born — Add Track, cross-scene
+   * Import Track, or a cross-panel port; `ctx.origin` says which (@since SDK
+   * 2.68.0). Lets a family stamp per-track scene-data on the newborn — e.g.
+   * the arp panel anchors every new track as a voice-group of ONE so the group
    * header's intent controls (voice count / rate / split) exist BEFORE the
    * first generation instead of appearing only after it (which wasted a
    * throwaway generation on defaults). The core reloads tracks after the hook

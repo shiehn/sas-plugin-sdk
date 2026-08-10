@@ -215,6 +215,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
     handleSoundImportPick,
     handleRestoreSound,
     handlePortTrack,
+    handleImportedTrack,
     transition,
     crossfadePairsMeta,
     fadesMeta,
@@ -246,7 +247,6 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
     handleBackToInstruments,
     handleRefreshInstruments,
     onAuditionNote,
-    loadTracks,
     makeServices,
     setGroupMute,
     setGroupSolo,
@@ -556,8 +556,8 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
           host={host}
           open={importOpen}
           onClose={() => setImportOpen(false)}
-          onImported={() => {
-            void loadTracks(true);
+          onImported={(handle) => {
+            void handleImportedTrack(handle);
           }}
           onPortTrack={host.readImportableTrackMidi ? handlePortTrack : undefined}
           testIdPrefix={`${identity.familyKey}-import`}

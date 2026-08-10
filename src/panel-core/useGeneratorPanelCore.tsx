@@ -114,6 +114,13 @@ export interface GeneratorPanelCore {
     trackName: string;
     role?: string;
   }): Promise<void>;
+  /**
+   * ImportTrackModal's `onImported` — the host already made the copy, so this
+   * only runs the family's `onTrackCreated` stamp (origin 'import') and
+   * reloads. Group families depend on it: the copied group meta still names
+   * the SOURCE scene's anchor. @since SDK 2.68.0
+   */
+  handleImportedTrack(handle: PluginTrackHandle): Promise<void>;
 
   // Transition machinery
   transition: TransitionOps;
@@ -636,7 +643,7 @@ export function useGeneratorPanelCore({
       // stamped group metas resolve before the user interacts with the row.
       if (adapter.onTrackCreated) {
         try {
-          await adapter.onTrackCreated(handle, { activeSceneId, trackDataKey });
+          await adapter.onTrackCreated(handle, { activeSceneId, trackDataKey, origin: 'add' });
         } catch (err: unknown) {
           console.warn(`[${logTag}] onTrackCreated failed (non-fatal):`, err);
         }
@@ -664,8 +671,10 @@ export function useGeneratorPanelCore({
 
   // --- Port track (cross-panel import) -----------------------------------
   // Pull a MIDI part out of a track owned by ANOTHER panel in THIS scene and
-  // play it on a fresh family instrument. The sound never carries across
-  // families; we copy only MIDI + role, then the adapter applies a native sound.
+  // play it on a fresh family instrument. The core copies MIDI + role and
+  // hands the sound step to `applyPortedTrackSound` along with the SOURCE
+  // selector — whether the source's patch travels with the part is the
+  // family's call, not the core's (see PortedTrackSource).
   const handlePortTrack = useCallback(
     async (sel: { sourceTrackDbId: string; trackName: string; role?: string }): Promise<void> => {
       if (!activeSceneId) {
@@ -705,12 +714,17 @@ export function useGeneratorPanelCore({
             notes,
           });
         }
-        // Native, role-appropriate family sound (adapter owns non-fatality).
-        await adapter.applyPortedTrackSound(handle, sel.role);
+        // Family sound step (adapter owns non-fatality). It gets the SOURCE
+        // selector too, so a family whose instrument can host the source's
+        // patch may inherit it rather than pick a fresh one.
+        await adapter.applyPortedTrackSound(handle, sel.role, {
+          trackDbId: sel.sourceTrackDbId,
+          trackName: sel.trackName,
+        });
         // Same stamping hook as Add Track (loadTracks below resolves metas).
         if (adapter.onTrackCreated) {
           try {
-            await adapter.onTrackCreated(handle, { activeSceneId, trackDataKey });
+            await adapter.onTrackCreated(handle, { activeSceneId, trackDataKey, origin: 'port' });
           } catch {
             /* non-fatal — the ported track lands as a plain row */
           }
@@ -734,6 +748,29 @@ export function useGeneratorPanelCore({
       }
     },
     [host, adapter, identity, activeSceneId, isConnected, tracks.length, loadTracks],
+  );
+
+  // --- Imported track (cross-scene faithful copy) -------------------------
+  // The HOST did the copying (host.importTrack → import_track_from_scene):
+  // MIDI, preset, FX and every `track:<sourceDbId>:*` scene-data key came
+  // across, re-keyed to the new dbId but with the VALUES untouched. That last
+  // part is why group families need the stamping hook here as much as on Add:
+  // a copied group meta still names the SOURCE scene's anchor dbId, so the
+  // newborn either joins a group that does not exist here or (as a non-anchor
+  // voice) resolves to an incomplete one. Re-stamping in `onTrackCreated` is
+  // what makes the copy a well-formed group of its own.
+  const handleImportedTrack = useCallback(
+    async (handle: PluginTrackHandle): Promise<void> => {
+      if (adapter.onTrackCreated && activeSceneId) {
+        try {
+          await adapter.onTrackCreated(handle, { activeSceneId, trackDataKey, origin: 'import' });
+        } catch (err: unknown) {
+          console.warn(`[${logTag}] onTrackCreated failed (non-fatal):`, err);
+        }
+      }
+      await loadTracks(true);
+    },
+    [adapter, activeSceneId, loadTracks, logTag],
   );
 
   // NOTE: handleSoundImportPick lives BELOW makeServices — it broadcasts to
@@ -2001,6 +2038,7 @@ export function useGeneratorPanelCore({
     setSoundImportTarget,
     handleSoundImportPick,
     handlePortTrack,
+    handleImportedTrack,
     transition,
     crossfadePairsMeta,
     fadesMeta,
