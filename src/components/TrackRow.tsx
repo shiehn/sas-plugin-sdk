@@ -19,6 +19,7 @@ import type { TrackLevelsHandle } from '../hooks/useTrackLevels';
 import type { InstrumentDescriptor, PluginHost, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
 import type { TrackRowDragProps } from '../hooks/useTrackReorder';
 import { useTrackFreeze } from '../hooks/useTrackFreeze';
+import { useRegenerateGuard } from '../hooks/useRegenerateGuard';
 import { VolumeSlider } from './VolumeSlider';
 import { PanSlider } from './PanSlider';
 import { SorceryProgressBar } from './SorceryProgressBar';
@@ -294,6 +295,16 @@ export function TrackRow({
   // "Needs generation" = has prompt, no MIDI yet, not currently generating
   const needsGeneration = !!(prompt?.trim() && !hasMidi && !isGenerating);
 
+  // Generating over existing MIDI is an unrecoverable overwrite (pattern +
+  // piano-roll edits), and "Create" looks identical either way — so the second
+  // press asks first. A track with no MIDI yet still generates on one click.
+  const regenerate = useRegenerateGuard({
+    hasMidi,
+    onGenerate,
+    subject: track.name?.trim() || 'This track',
+    testIdPrefix: 'track-regenerate-confirm',
+  });
+
   const hasFxActive = Object.values(fxDetailState).some(
     (d: { enabled: boolean }) => d.enabled
   );
@@ -303,7 +314,7 @@ export function TrackRow({
   const fxTabOpen = drawerOpen && drawerTab === 'fx';
   const soundTabOpen = drawerOpen && drawerTab !== 'fx';
 
-  const handleKeyDown = promptEnterToGenerate(() => onGenerate?.(), !onGenerate);
+  const handleKeyDown = promptEnterToGenerate(regenerate.request, !onGenerate);
 
   // Amber pulse class for "needs generation" state
   const borderColorStyle = needsGeneration
@@ -430,7 +441,7 @@ export function TrackRow({
             {onGenerate && (
               <button
                 data-testid="sdk-generate-button"
-                onClick={onGenerate}
+                onClick={regenerate.request}
                 disabled={!isAuthenticated || isGenerating || !prompt?.trim()}
                 className={`w-14 py-0.5 rounded-sm text-xs font-medium transition-colors border ${
                   !isAuthenticated || isGenerating
@@ -441,7 +452,15 @@ export function TrackRow({
                         ? 'bg-sas-accent/20 border-sas-accent text-sas-accent hover:bg-sas-accent hover:text-sas-bg'
                         : 'bg-sas-panel border-sas-border text-sas-muted/50 cursor-not-allowed'
                 }`}
-                title={!isAuthenticated ? 'Please log in' : isGenerating ? 'Generating...' : 'Generate MIDI'}
+                title={
+                  !isAuthenticated
+                    ? 'Please log in'
+                    : isGenerating
+                      ? 'Generating...'
+                      : hasMidi
+                        ? 'Regenerate MIDI — replaces the current pattern'
+                        : 'Generate MIDI'
+                }
               >
                 Create
               </button>
@@ -683,6 +702,9 @@ export function TrackRow({
         onCancel={() => setConfirmDelete(false)}
         testIdPrefix="track-delete-confirm"
       />
+
+      {/* Overwrite guard for Create-over-existing-MIDI (@since SDK 2.69.0). */}
+      {regenerate.dialog}
     </div>
   );
 }

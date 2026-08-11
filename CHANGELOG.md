@@ -4,6 +4,28 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 2.69.0 — Regenerating over existing MIDI asks first
+
+"Create" is the same button before and after a track has MIDI: the first press
+composes, every later press silently replaced the pattern — and any piano-roll
+edits — with a fresh LLM take, with no undo. It now confirms.
+
+- **`useRegenerateGuard({ hasMidi, onGenerate, subject, detail })`** — returns
+  `{ request, open, dialog }`. Call `request` instead of the generate handler
+  and render `dialog`: with `hasMidi` false it generates immediately (nothing
+  to lose), with `hasMidi` true it opens a "Replace existing MIDI?" confirm
+  and only then calls `onGenerate`. Built on `ConfirmDialog`.
+- **`TrackRow`** uses it internally for the Create button AND the prompt's
+  Enter-to-generate, so every panel that renders a row (synth, drum,
+  instrument, livecode, bass/arp/ensemble/pad voices) gets the guard with no
+  change. `hasMidi` false — the first generation — is untouched. Its Create
+  tooltip now reads "Regenerate MIDI — replaces the current pattern" once MIDI
+  exists. Dialog test ids are prefixed `track-regenerate-confirm-*`.
+- The voice-group panels' own group-header Generate button drives the anchor
+  track directly and never passes through `TrackRow`; each now calls the hook
+  itself (bass / arp / ensemble / pad), naming how many voices one press
+  rewrites.
+
 ## 2.68.0 — Import Track reaches the stamping hook
 
 `onTrackCreated` has always documented itself as running on "Add Track /

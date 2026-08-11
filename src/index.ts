@@ -251,6 +251,11 @@ export {
 } from './transition-designer-meta';
 export { ConfirmDialog, type ConfirmDialogProps } from './components/ConfirmDialog';
 export {
+  useRegenerateGuard,
+  type UseRegenerateGuardOptions,
+  type RegenerateGuard,
+} from './hooks/useRegenerateGuard';
+export {
   GroupCollapseChevron,
   type GroupCollapseChevronProps,
 } from './components/GroupCollapseChevron';
