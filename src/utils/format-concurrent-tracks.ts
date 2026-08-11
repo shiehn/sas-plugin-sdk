@@ -10,9 +10,23 @@
  * duration / pitch verbatim and can reason about feel + harmony.
  *
  * Tracks pinned via `PluginGenerationContextOptions.pinTrackDbIds` render
- * FIRST under a REFERENCE TRACKS header with an explicit counterpoint
- * instruction — they are the parts the caller asked to write against,
- * not merely ambient context.
+ * FIRST — they are the parts the caller asked to write against, not merely
+ * ambient context. Pinned tracks split by ROLE into two headers, because the
+ * right instruction is the opposite for each:
+ *
+ *   RHYTHM ANCHORS  (kick/sub family) — LOCK TO these. Sharing an onset with
+ *                   the kick is the point; a part that dodges every anchor
+ *                   hit reads as drift.
+ *   REFERENCE TRACKS (everything else) — write in COUNTERPOINT, avoid
+ *                   doubling their onsets.
+ *
+ * The split exists because groove-leader auto-pinning (sas-app
+ * generation-context-service) pins the kick for every generation that has no
+ * explicit pins. Under the old single header that handed the bass panel
+ * "avoid doubling their onsets" about the kick — the exact opposite of what a
+ * bassline should do — and produced lines uniformly displaced off the kick
+ * grid. When no rhythm anchor is pinned the output is byte-identical to the
+ * pre-split behavior.
  *
  * Returns the empty string when there are no concurrent tracks — call
  * sites can `if (block) push(block)` rather than baking in a placeholder.
@@ -40,10 +54,22 @@ export function formatConcurrentTracks(ctx: PluginGenerationContext): string {
   const lines: string[] = [];
 
   if (pinned.length > 0) {
-    lines.push(
-      'REFERENCE TRACKS (write in counterpoint against these — interlock with their rhythm, avoid doubling their onsets, favor contrary or oblique motion):',
+    const anchors = pinned.filter((t: PluginConcurrentTrackInfo) => isRhythmAnchorRole(t.role));
+    const counterpoint = pinned.filter(
+      (t: PluginConcurrentTrackInfo) => !isRhythmAnchorRole(t.role),
     );
-    for (const track of pinned) pushTrackLines(lines, track);
+    if (anchors.length > 0) {
+      lines.push(
+        'RHYTHM ANCHORS (lock to these — land your hits ON their onsets wherever the style allows; sharing an onset with the rhythm section is the point, not a collision. Do NOT displace every note off their grid: a part that dodges every anchor hit reads as drift, not groove):',
+      );
+      for (const track of anchors) pushTrackLines(lines, track);
+    }
+    if (counterpoint.length > 0) {
+      lines.push(
+        'REFERENCE TRACKS (write in counterpoint against these — interlock with their rhythm, avoid doubling their onsets, favor contrary or oblique motion):',
+      );
+      for (const track of counterpoint) pushTrackLines(lines, track);
+    }
   }
 
   if (ambient.length > 0) {
@@ -58,6 +84,36 @@ export function formatConcurrentTracks(ctx: PluginGenerationContext): string {
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Rhythm-section anchor roles — the parts a new line LOCKS TO rather than
+ * writes around. Deliberately self-contained (the app copy must not import
+ * SDK runtime, and the two files are byte-identical), and deliberately wider
+ * than the app's KICK_ROLES/BASS_ROLES: the drum panel writes raw on-disk
+ * folder names ('kick') alongside the normalized role ('kicks'), and both
+ * reach this formatter unnormalized.
+ */
+const RHYTHM_ANCHOR_ROLES: ReadonlySet<string> = new Set<string>([
+  'kick',
+  'kicks',
+  'drums',
+  '808',
+  '808s',
+  'bass',
+  'sub',
+]);
+
+/**
+ * Whole-token, case/whitespace-insensitive membership test — mirrors the
+ * app classifier's `roleInSet` policy so `"808 bass"` matches via either
+ * token.
+ */
+function isRhythmAnchorRole(role: string | null | undefined): boolean {
+  if (!role) return false;
+  const normalized = role.toLowerCase().replace(/[\s_-]+/g, ' ').trim();
+  if (RHYTHM_ANCHOR_ROLES.has(normalized)) return true;
+  return normalized.split(/\s+/).some((token) => RHYTHM_ANCHOR_ROLES.has(token));
 }
 
 function pushTrackLines(lines: string[], track: PluginConcurrentTrackInfo): void {
