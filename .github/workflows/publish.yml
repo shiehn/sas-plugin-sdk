@@ -30,6 +30,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The SDK has its own jest suite (added 2.50.0) — publishing without
+      # running it shipped untested SDK versions to 13 downstream panels.
+      - name: Test
+        run: npm test
+
       - name: Bump patch version
         run: |
           git config user.name "github-actions[bot]"
