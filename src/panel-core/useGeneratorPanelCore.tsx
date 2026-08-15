@@ -24,7 +24,6 @@ import type {
   BulkAddPlaceholderTrack,
   InstrumentDescriptor,
 } from '../types/plugin-sdk.types';
-import type { FxCategory } from '../types/fx-toggle.types';
 import { useSceneState } from '../hooks/useSceneState';
 import { useAnySolo } from '../hooks/useAnySolo';
 import { useSoundHistory, type TrackSoundHistory } from '../hooks/useSoundHistory';
@@ -34,7 +33,7 @@ import { parseCrossfadePairs, type CrossfadePairMeta } from '../crossfade-meta';
 import { parseFades, splitFadeEntries, type FadeEntry } from '../fade-meta';
 import type { DrawerTab } from '../components/TrackDrawer';
 import { type GeneratorTrackState, newTrackState } from './track-state';
-import { generationBlockedBy, pluginFxToToggleFx, trackDataKey } from './panel-helpers';
+import { generationBlockedBy, trackDataKey } from './panel-helpers';
 import { runLinkedBroadcast, type GroupBroadcastProgress } from './linked-broadcast';
 import { panelClipEndSeconds, panelQuarterNotesPerBar } from './meter';
 import {
@@ -201,9 +200,6 @@ export interface GeneratorPanelCore {
   handleNotesChange(trackId: string, notes: PluginMidiNote[]): void;
   handleProgressChange(trackId: string, pct: number): void;
   handleCopy(trackId: string): Promise<void>;
-  handleFxToggle(trackId: string, category: FxCategory, enabled: boolean): void;
-  handleFxPresetChange(trackId: string, category: FxCategory, presetIndex: number): void;
-  handleFxDryWetChange(trackId: string, category: FxCategory, value: number): void;
   handleInstrumentSelect(trackId: string, pluginId: string): Promise<void>;
   handleShowEditor(trackId: string): Promise<void>;
   handleBackToInstruments(trackId: string): void;
@@ -388,15 +384,6 @@ export function useGeneratorPanelCore({
             // Use defaults
           }
 
-          // Get FX state
-          let fxDetailState = newTrackState(handle).fxDetailState;
-          try {
-            const fxState = await host.getTrackFxState(handle.id);
-            fxDetailState = pluginFxToToggleFx(fxState);
-          } catch {
-            // Use defaults
-          }
-
           // Use stable DB UUID for plugin_data keys (engine IDs change on reload)
           const promptKey = trackDataKey(handle.dbId, 'prompt');
           let prompt = typeof sceneData[promptKey] === 'string' ? (sceneData[promptKey] as string) : '';
@@ -431,7 +418,6 @@ export function useGeneratorPanelCore({
               prompt,
               role: handle.role ?? '',
               runtimeState,
-              fxDetailState,
               hasMidi,
               instrumentMissing,
             }),
@@ -1537,107 +1523,15 @@ export function useGeneratorPanelCore({
     [host, loadTracks],
   );
 
-  // --- FX Operations (optimistic UI) --------------------------------------
-  const handleFxToggle = useCallback(
-    (trackId: string, category: FxCategory, enabled: boolean): void => {
-      setTracks((prev) =>
-        prev.map((t) =>
-          t.handle.id === trackId
-            ? { ...t, fxDetailState: { ...t.fxDetailState, [category]: { ...t.fxDetailState[category], enabled } } }
-            : t,
-        ),
-      );
-      host.toggleTrackFx(trackId, category, enabled).catch(() => {
-        setTracks((prev) =>
-          prev.map((t) =>
-            t.handle.id === trackId
-              ? {
-                  ...t,
-                  fxDetailState: {
-                    ...t.fxDetailState,
-                    [category]: { ...t.fxDetailState[category], enabled: !enabled },
-                  },
-                }
-              : t,
-          ),
-        );
-      });
-    },
-    [host],
-  );
-
-  const handleFxPresetChange = useCallback(
-    (trackId: string, category: FxCategory, presetIndex: number): void => {
-      setTracks((prev) =>
-        prev.map((t) =>
-          t.handle.id === trackId
-            ? { ...t, fxDetailState: { ...t.fxDetailState, [category]: { ...t.fxDetailState[category], presetIndex } } }
-            : t,
-        ),
-      );
-      host
-        .setTrackFxPreset(trackId, category, presetIndex)
-        .then((result) => {
-          if (result.dryWet !== undefined) {
-            setTracks((prev) =>
-              prev.map((t) =>
-                t.handle.id === trackId
-                  ? {
-                      ...t,
-                      fxDetailState: {
-                        ...t.fxDetailState,
-                        [category]: { ...t.fxDetailState[category], dryWet: result.dryWet as number },
-                      },
-                    }
-                  : t,
-              ),
-            );
-          }
-        })
-        .catch(() => {});
-    },
-    [host],
-  );
-
-  const handleFxDryWetChange = useCallback(
-    (trackId: string, category: FxCategory, value: number): void => {
-      setTracks((prev) =>
-        prev.map((t) =>
-          t.handle.id === trackId
-            ? { ...t, fxDetailState: { ...t.fxDetailState, [category]: { ...t.fxDetailState[category], dryWet: value } } }
-            : t,
-        ),
-      );
-      host.setTrackFxDryWet(trackId, category, value).catch(() => {});
-    },
-    [host],
-  );
-
-  const toggleFxDrawer = useCallback(
-    (trackId: string): void => {
-      setTracks((prev) =>
-        prev.map((t) => {
-          if (t.handle.id !== trackId) return t;
-          const onFx = t.drawerOpen && t.drawerTab === 'fx';
-          return { ...t, drawerOpen: !onFx, drawerTab: 'fx', editorStage: false };
-        }),
-      );
-      // Refresh FX state from the engine whenever we OPEN the FX tab.
-      const track = tracks.find((t) => t.handle.id === trackId);
-      const wasOnFx = !!track && track.drawerOpen && track.drawerTab === 'fx';
-      if (track && !wasOnFx) {
-        host
-          .getTrackFxState(trackId)
-          .then((fxState) => {
-            setTracks((prev) =>
-              prev.map((t) => (t.handle.id === trackId ? { ...t, fxDetailState: pluginFxToToggleFx(fxState) } : t)),
-            );
-          })
-          .catch(() => {});
-      }
-    },
-    [host, tracks],
-  );
+  const toggleFxDrawer = useCallback((trackId: string): void => {
+    setTracks((prev) =>
+      prev.map((t) => {
+        if (t.handle.id !== trackId) return t;
+        const onFx = t.drawerOpen && t.drawerTab === 'fx';
+        return { ...t, drawerOpen: !onFx, drawerTab: 'fx', editorStage: false };
+      }),
+    );
+  }, []);
 
   // --- Piano-roll edit: load + save ---------------------------------------
   const loadEditNotes = useCallback(
@@ -1707,16 +1601,7 @@ export function useGeneratorPanelCore({
   const handleTabChange = useCallback(
     (trackId: string, tab: DrawerTab): void => {
       setTracks((prev) => prev.map((t) => (t.handle.id === trackId ? { ...t, drawerOpen: true, drawerTab: tab } : t)));
-      if (tab === 'fx') {
-        host
-          .getTrackFxState(trackId)
-          .then((fxState) => {
-            setTracks((prev) =>
-              prev.map((t) => (t.handle.id === trackId ? { ...t, fxDetailState: pluginFxToToggleFx(fxState) } : t)),
-            );
-          })
-          .catch(() => {});
-      } else if (tab === 'pick' && availableInstruments.length === 0 && !instrumentsLoading) {
+      if (tab === 'pick' && availableInstruments.length === 0 && !instrumentsLoading) {
         // Lazy-load available instruments the first time the Pick tab opens.
         setInstrumentsLoading(true);
         host
@@ -2079,9 +1964,6 @@ export function useGeneratorPanelCore({
     handleNotesChange,
     handleProgressChange,
     handleCopy,
-    handleFxToggle,
-    handleFxPresetChange,
-    handleFxDryWetChange,
     handleInstrumentSelect,
     handleShowEditor,
     handleBackToInstruments,

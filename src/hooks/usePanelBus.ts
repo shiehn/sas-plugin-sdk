@@ -24,8 +24,9 @@ import type {
   PluginHost,
 } from '../types/plugin-sdk.types';
 
-/** Bus meter poll cadence. Half the per-track meters' 33 ms — one extra IPC
- *  round-trip per engaged panel is cheap, and 15 Hz reads fine on a bus bar. */
+/** Legacy bus meter poll cadence — pre-2.70 hosts only. 2.70+ hosts push
+ *  levels via `onPanelBusLevels` (engine-batched, change-suppressed) and
+ *  the hook never polls. */
 const LEVELS_POLL_MS = 66;
 
 export interface UsePanelBusResult {
@@ -33,8 +34,16 @@ export interface UsePanelBusResult {
   supported: boolean;
   /** Null until the first load completes for the current scene. */
   bus: PanelBusState | null;
-  /** Stereo output levels (null = disengaged / floored). Polled at ~15 Hz. */
+  /** Stereo output levels (null = disengaged / floored). Engine-pushed on
+   *  2.70+ hosts (change-suppressed ~15 Hz); polled on older hosts. */
   levels: PanelBusLevels | null;
+  /**
+   * Attach to the strip's container element. Gates the level subscription
+   * to panels actually on screen (IntersectionObserver) — a collapsed or
+   * scrolled-away panel holds no engine-stream refcount. Optional:
+   * leaving it unattached behaves as always-visible. @since SDK 2.70.0
+   */
+  meterVisibilityRef: (el: HTMLElement | null) => void;
   availableFx: InstrumentDescriptor[];
   fxLoading: boolean;
   fxPickerOpen: boolean;
@@ -175,11 +184,69 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
     };
   }, [activeSceneId]);
 
-  // Meter poll: only while the bus is engaged (and the tab visible). Errors
-  // and unrealized states floor the meter rather than surfacing.
+  // ── Meter visibility gates ────────────────────────────────────────────
+  // Document visibility (tab/window hidden) + on-screen visibility
+  // (IntersectionObserver on the strip container, when attached). Both gate
+  // the push subscription below so hidden panels hold no engine-stream
+  // refcount; an unattached ref defaults to visible for back-compat.
+  const [docVisible, setDocVisible] = useState<boolean>(
+    typeof document === 'undefined' ? true : !document.hidden
+  );
+  const [onScreen, setOnScreen] = useState(true);
+  const meterObserverRef = useRef<IntersectionObserver | null>(null);
+
   useEffect(() => {
-    if (!supported || !activeSceneId || !bus?.engaged || !host.getPanelBusLevels) {
-      setLevels(null);
+    if (typeof document === 'undefined') return;
+    const onVisibilityChange = (): void => setDocVisible(!document.hidden);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
+
+  const meterVisibilityRef = useCallback((el: HTMLElement | null): void => {
+    meterObserverRef.current?.disconnect();
+    meterObserverRef.current = null;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      // Detached (or jsdom) — treat as visible so the meter never dies from
+      // a missing observer.
+      setOnScreen(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      setOnScreen(entries.some((entry) => entry.isIntersecting));
+    });
+    observer.observe(el);
+    meterObserverRef.current = observer;
+  }, []);
+
+  useEffect(() => {
+    return () => meterObserverRef.current?.disconnect();
+  }, []);
+
+  const pushSupported = supported && typeof host.onPanelBusLevels === 'function';
+
+  // ── Meter, push path (2.70+ hosts) ────────────────────────────────────
+  // Subscribe only while engaged AND viewable; the host refcounts
+  // subscriptions and turns the engine-side producer off at zero. An update
+  // without this scene's entry means the bus vanished — floor the meter.
+  useEffect(() => {
+    if (!pushSupported || !activeSceneId || !bus?.engaged || !docVisible || !onScreen) {
+      if (pushSupported) setLevels(null);
+      return;
+    }
+    const unsubscribe = host.onPanelBusLevels!((updates) => {
+      const mine = updates.find((update) => update.sceneId === activeSceneId);
+      setLevels(mine ? { leftDb: mine.leftDb, rightDb: mine.rightDb, clipped: mine.clipped } : null);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [pushSupported, host, activeSceneId, bus?.engaged, docVisible, onScreen]);
+
+  // ── Meter, legacy poll path (pre-2.70 hosts only) ─────────────────────
+  // Errors and unrealized states floor the meter rather than surfacing.
+  useEffect(() => {
+    if (pushSupported || !supported || !activeSceneId || !bus?.engaged || !host.getPanelBusLevels) {
+      if (!pushSupported) setLevels(null);
       return;
     }
     let cancelled = false;
@@ -198,7 +265,7 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
       cancelled = true;
       clearInterval(id);
     };
-  }, [supported, activeSceneId, bus?.engaged, host]);
+  }, [pushSupported, supported, activeSceneId, bus?.engaged, host]);
 
   const loadFxList = useCallback(
     async (opts: { force?: boolean; rescan?: boolean }): Promise<void> => {
@@ -256,6 +323,7 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
     supported,
     bus,
     levels,
+    meterVisibilityRef,
     availableFx,
     fxLoading,
     fxPickerOpen,

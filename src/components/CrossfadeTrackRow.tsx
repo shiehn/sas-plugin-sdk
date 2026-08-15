@@ -19,7 +19,6 @@
 import React from 'react';
 import { TrackRow } from './TrackRow';
 import { ConfirmDialog } from './ConfirmDialog';
-import { EMPTY_FX_DETAIL_STATE } from '../types/fx-toggle.types';
 import type { TrackLevelsHandle } from '../hooks/useTrackLevels';
 import type { CrossfadeSlot } from '../crossfade-meta';
 
@@ -104,7 +103,6 @@ export function CrossfadeTrackRow({
     <TrackRow
       track={{ id: layer.trackId, name: '', role: layer.role }}
       runtimeState={layer.runtimeState}
-      fxDetailState={EMPTY_FX_DETAIL_STATE}
       drawerOpen={false}
       drawerTab="fx"
       levels={levels}

@@ -12,7 +12,6 @@ import type {
   PluginTrackRuntimeState,
   PluginMidiNote,
 } from '../types/plugin-sdk.types';
-import { EMPTY_FX_DETAIL_STATE, type TrackFxDetailState } from '../types/fx-toggle.types';
 import type { DrawerTab } from '../components/TrackDrawer';
 
 /** Internal track state combining handle + runtime state + prompt. */
@@ -21,7 +20,6 @@ export interface GeneratorTrackState {
   prompt: string;
   role: string;
   runtimeState: PluginTrackRuntimeState;
-  fxDetailState: TrackFxDetailState;
   // Unified drawer state (fx / pick / edit / history tabs).
   drawerOpen: boolean;
   drawerTab: DrawerTab;
@@ -67,7 +65,6 @@ export function newTrackState(
     prompt: '',
     role: '',
     runtimeState: { id: handle.id, muted: false, solo: false, volume: 0.75, pan: 0 },
-    fxDetailState: { ...EMPTY_FX_DETAIL_STATE },
     drawerOpen: false,
     drawerTab: 'fx',
     editorStage: false,

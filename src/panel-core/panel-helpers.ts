@@ -1,18 +1,13 @@
 /**
  * Small pure helpers shared by every generator panel — moved verbatim out of
  * the three panel monoliths (synth/drum/instrument each carried a copy of
- * pluginFxToToggleFx and an LLM note-response parser).
+ * an LLM note-response parser).
  *
  * @since SDK 2.35.0
  */
 
 import type { KeyboardEvent } from 'react';
-import type {
-  PluginTrackFxDetailState,
-  PluginFxCategoryDetailState,
-  PluginMidiNote,
-} from '../types/plugin-sdk.types';
-import { EMPTY_FX_DETAIL_STATE, type TrackFxDetailState } from '../types/fx-toggle.types';
+import type { PluginMidiNote } from '../types/plugin-sdk.types';
 
 /**
  * Default prompt-field keyboard behavior: Enter (without Shift) fires the
@@ -43,22 +38,6 @@ export function promptEnterToGenerate(
  */
 export function trackDataKey(dbId: string, suffix: string): string {
   return `track:${dbId}:${suffix}`;
-}
-
-/** Convert SDK PluginTrackFxDetailState to the FxToggleBar's expected TrackFxDetailState. */
-export function pluginFxToToggleFx(sdkState: PluginTrackFxDetailState): TrackFxDetailState {
-  const result = { ...EMPTY_FX_DETAIL_STATE };
-  for (const category of ['eq', 'compressor', 'chorus', 'phaser', 'delay', 'reverb'] as const) {
-    const sdkCat = sdkState[category] as PluginFxCategoryDetailState | undefined;
-    if (sdkCat) {
-      result[category] = {
-        enabled: sdkCat.enabled,
-        presetIndex: sdkCat.presetIndex,
-        dryWet: sdkCat.dryWet,
-      };
-    }
-  }
-  return result;
 }
 
 /** Shape of the parsed flat LLM JSON note response. */

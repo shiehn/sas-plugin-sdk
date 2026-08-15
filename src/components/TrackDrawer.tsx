@@ -3,7 +3,7 @@
  *
  * ONE drawer with a flat contextual tab strip. Which tabs appear is computed
  * from which callbacks the host panel provides:
- *   - FX      (onFxToggle)     — the 6-category FX toggle bar
+ *   - FX      (externalFxHost) — 3rd-party FX chips + picker (TrackExternalFxSection)
  *   - Pick    (onSelect)       — instrument-plugin picker (+ native editor stage)
  *   - History (onRestoreSound) — sounds this track has had (restore / favorite)
  *   - Import  (onImportSound)  — copy a sound from a matching track in another scene
@@ -20,8 +20,6 @@
 
 import React, { useState, useMemo } from 'react';
 import type { InstrumentDescriptor, PluginHost, SoundHistoryEntry, PluginMidiNote } from '../types/plugin-sdk.types';
-import type { FxCategory, TrackFxDetailState } from '../types/fx-toggle.types';
-import { FxToggleBar } from './FxToggleBar';
 import { PianoRollEditor } from './PianoRollEditor';
 import { TrackExternalFxSection } from './TrackExternalFxSection';
 import {
@@ -57,20 +55,15 @@ export interface TrackDrawerProps {
   /** Switch tabs (strip clicks). */
   onTabChange?: (tab: DrawerTab) => void;
 
-  // --- FX tab (enabled when onFxToggle is provided) ---
+  // --- FX tab (enabled when externalFxHost supports the external-FX surface) ---
   trackId: string;
-  fxState: TrackFxDetailState;
-  onFxToggle?: (category: FxCategory, enabled: boolean) => void;
-  onFxPresetChange?: (category: FxCategory, presetIndex: number) => void;
-  onFxDryWetChange?: (category: FxCategory, value: number) => void;
   /** Disable FX controls (e.g. while the track is generating). */
   fxDisabled?: boolean;
   /**
-   * Third-party FX section under the toggle bar (@since SDK 2.39.0): pass the
-   * panel's host and the section manages its own state
-   * (TrackExternalFxSection). Renders nothing on hosts without the surface,
-   * so panels can pass this unconditionally. Omit to keep a built-ins-only
-   * FX tab.
+   * 3rd-party FX section — the whole FX tab (@since SDK 3.0.0; built-in
+   * Tracktion FX were removed). Pass the panel's host and the section manages
+   * its own state (TrackExternalFxSection). The tab appears only when the
+   * host implements the surface, so panels can pass this unconditionally.
    */
   externalFxHost?: PluginHost;
 
@@ -160,10 +153,6 @@ export function TrackDrawer({
   activeTab,
   onTabChange,
   trackId,
-  fxState,
-  onFxToggle,
-  onFxPresetChange,
-  onFxDryWetChange,
   fxDisabled = false,
   externalFxHost,
   altTracks,
@@ -195,7 +184,8 @@ export function TrackDrawer({
   // --- Hooks (MUST stay above every early return) ---
   const [search, setSearch] = useState('');
 
-  const fxEnabled = !!onFxToggle;
+  const fxEnabled =
+    typeof externalFxHost?.getTrackExternalFx === 'function' || !!altTracks;
   const pickEnabled = !!onSelect;
   const historyEnabled = !!onRestoreSound;
   const importEnabled = !!onImportSound;
@@ -370,25 +360,11 @@ export function TrackDrawer({
     );
   }
 
-  // ---- FX tab ----
+  // ---- FX tab (3rd-party FX only @since SDK 3.0.0) ----
   if (effectiveTab === 'fx') {
     return (
       <div className="flex flex-col gap-2" data-testid="sdk-drawer-fx">
         {header}
-        <FxToggleBar
-          trackId={trackId}
-          fxState={fxState}
-          onToggle={(_t: string, category: FxCategory, enabled: boolean) =>
-            onFxToggle?.(category, enabled)
-          }
-          onPresetChange={(_t: string, category: FxCategory, presetIndex: number) =>
-            onFxPresetChange?.(category, presetIndex)
-          }
-          onDryWetChange={(_t: string, category: FxCategory, value: number) =>
-            onFxDryWetChange?.(category, value)
-          }
-          disabled={fxDisabled}
-        />
         {externalFxHost && (
           <TrackExternalFxSection host={externalFxHost} trackId={trackId} disabled={fxDisabled} />
         )}

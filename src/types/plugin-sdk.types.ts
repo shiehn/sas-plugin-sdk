@@ -225,7 +225,10 @@ export interface TrackExternalFxEntry {
  * still copies. @since SDK 2.41.0
  */
 export interface TrackFxCopyResult {
-  /** Built-in FX categories (reverb/delay/eq/…) re-applied on the dest. */
+  /**
+   * Always empty since SDK 3.0.0 (built-in FX were removed from the product);
+   * retained for wire-shape compatibility.
+   */
   builtIn: string[];
   /** External inserts successfully rebuilt on the dest. */
   externalCopied: number;
@@ -243,6 +246,16 @@ export interface PanelBusLevels {
   rightDb: number;
   /** Latched overload since the last read. */
   clipped: boolean;
+}
+
+/**
+ * One scene's bus levels in an `onPanelBusLevels` update — the engine-pushed
+ * replacement for polling `getPanelBusLevels` (~15 Hz, change-suppressed;
+ * no update means "unchanged", an update missing your scene means that bus
+ * is gone/unrealized — floor the meter). @since SDK 2.70.0
+ */
+export interface PanelBusLevelsUpdate extends PanelBusLevels {
+  sceneId: string;
 }
 
 /**
@@ -780,67 +793,22 @@ export interface PluginHost {
   getValidRoles(): readonly string[];
 
   // --- FX Operations (ownership-scoped) ---
-
-  /** Get detailed FX state for a track (enabled, preset, dry/wet per category). */
-  getTrackFxState(trackId: string): Promise<PluginTrackFxDetailState>;
-
-  /** Toggle an FX category on/off for a track. */
-  toggleTrackFx(trackId: string, category: string, enabled: boolean): Promise<void>;
-
-  /** Set FX preset for a track. Returns the new dry/wet value if applicable. */
-  setTrackFxPreset(trackId: string, category: string, presetIndex: number): Promise<{ dryWet?: number }>;
-
-  /** Set FX dry/wet level for a track. */
-  setTrackFxDryWet(trackId: string, category: string, value: number): Promise<void>;
+  // Built-in Tracktion FX (the category toggle/preset/dry-wet surface) were
+  // REMOVED in SDK 3.0.0 — the product is 3rd-party-FX-only. Per-track FX go
+  // through the external-FX surface (getTrackExternalFx & friends) below.
 
   /**
-   * Enumerate a built-in FX's automatable parameters, so a panel can discover
-   * names before writing curves. `category` is an FX-toggle category
-   * ('reverb', 'delay', 'eq', 'compressor', 'chorus', 'phaser').
+   * Apply a host-managed FX preset by INTENT rather than by category — the
+   * only surviving use of engine built-ins, kept internal to the host. The
+   * intent set is closed; panels cannot reach arbitrary built-in FX through
+   * it. Today: 'safety-limiter' arms a brickwall limiter (used by coupled
+   * sound-design panels whose patches can scream).
    *
    * Optional — panels MUST feature-gate on
-   * `typeof host.listTrackFxParameters === 'function'`.
-   * @since SDK 2.63.0
+   * `typeof host.applyManagedFxPreset === 'function'`.
+   * @since SDK 3.0.0
    */
-  listTrackFxParameters?(
-    trackId: string,
-    category: string
-  ): Promise<PluginFxParameterInfo[]>;
-
-  /**
-   * Write automation curves onto a track's built-in FX.
-   *
-   * `curves` maps PARAMETER NAME to a point list; names resolve against the
-   * live plugin (see {@link listTrackFxParameters}). The alias **`'dryWet'`**
-   * resolves to whichever parameter carries that category's mix — `'Wet Level'`
-   * for reverb, `'Mix proportion'` for delay — so the common case needs no
-   * knowledge of engine parameter names.
-   *
-   * Points are `{ timeSeconds, value }` measured from the START OF THE EDIT,
-   * and values are in the parameter's own range (the host clamps). Curves
-   * re-read on loop wrap and bake into bounces, so a pattern authored across
-   * one loop repeats for free and survives into renders.
-   *
-   * An EMPTY point array CLEARS that parameter's automation, and its static
-   * value takes over again.
-   *
-   * Two caveats worth designing around:
-   *  - Curves are authored in SECONDS at the current tempo. After a BPM change
-   *    they no longer line up musically — re-push them.
-   *  - Not every category has an automatable mix. Chorus and phaser drive
-   *    dry/wet through plugin state rather than a parameter, so `'dryWet'` is
-   *    rejected for those (reported in `skipped`, or thrown when it was the
-   *    only requested curve).
-   *
-   * Optional — panels MUST feature-gate on
-   * `typeof host.setTrackFxAutomation === 'function'`.
-   * @since SDK 2.63.0
-   */
-  setTrackFxAutomation?(
-    trackId: string,
-    category: string,
-    curves: Record<string, PluginAutomationPoint[]>
-  ): Promise<PluginFxAutomationResult>;
+  applyManagedFxPreset?(trackId: string, intent: ManagedFxIntent): Promise<void>;
 
   // --- Real-time Track State ---
 
@@ -1254,6 +1222,14 @@ export interface PluginHost {
    * the meter floored. Never engages a bus. @since SDK 2.38.0
    */
   getPanelBusLevels?(sceneId: string): Promise<PanelBusLevels | null>;
+  /**
+   * Engine-pushed bus levels for THIS plugin's buses, re-keyed by sceneId.
+   * Preferred over polling `getPanelBusLevels` when present — the hook
+   * feature-detects. Updates arrive only while ≥1 subscriber exists and the
+   * window is visible (the host turns the engine stream off otherwise).
+   * @since SDK 2.70.0
+   */
+  onPanelBusLevels?(listener: (updates: PanelBusLevelsUpdate[]) => void): UnsubscribeFn;
 
   /** Master fader in dB (engages the bus on first use). */
   setPanelBusVolume?(sceneId: string, volumeDb: number): Promise<void>;
@@ -1376,9 +1352,9 @@ export interface PluginHost {
 
   // -------------------------------------------------------------------------
   // Track external FX (third-party VST3/AU inserts on ONE track) — the track
-  // analogue of the panel-bus FX chain. The built-in FX toggles
-  // (getTrackFxState / toggleTrackFx / …) stay as they are; these methods
-  // manage additional scanned-plugin inserts, placed before the track's
+  // analogue of the panel-bus FX chain, and since SDK 3.0.0 the ONLY
+  // user-facing per-track FX surface. These methods manage
+  // scanned-plugin inserts, placed before the track's
   // Volume & Pan. Ownership-scoped like every track method. States persist
   // per track (raw VST3/AU blobs) and are re-applied on reopen / rebuilt
   // after a `.sasproj` import. Everything optional — panels MUST feature-gate
@@ -1418,8 +1394,8 @@ export interface PluginHost {
   showTrackExternalFxEditor?(trackId: string, fxIndex: number): Promise<void>;
 
   /**
-   * Copy a SOURCE track's whole FX chain (built-in fx-toggle categories AND
-   * external inserts with their states) onto an owned track. The source is
+   * Copy a SOURCE track's whole FX chain (external inserts with their
+   * states) onto an owned track. The source is
    * addressed by DB row id and may live in ANOTHER scene (transition
    * crossfade/fade layers copy from the from/to scenes) — only the DEST is
    * ownership-asserted, mirroring `getTrackSound`. Partial success is normal:
@@ -1940,12 +1916,14 @@ export interface PluginHost {
    * Render an audio transition effect onto a sample (offline DSP via the audio
    * tool), returning a NEW library sample to place. Used for stutter / chopped
    * loop transitions; `filter` (SDK 2.54.0) bakes a click-free cutoff sweep
-   * (defaults: highpass 20 → 2400 Hz). @since SDK 2.32.0
+   * (defaults: highpass 20 → 2400 Hz); `delay` (SDK 3.0.0) bakes a feedback
+   * echo throw with a rung-out tail (default delay: a dotted eighth at
+   * `bpm`). @since SDK 2.32.0
    */
   renderSampleEffect?(
     sampleId: string,
     spec: {
-      effect: 'stutter' | 'chopped' | 'filter' | 'tape-stop';
+      effect: 'stutter' | 'chopped' | 'filter' | 'tape-stop' | 'delay';
       bars: number;
       bpm: number;
       repeats?: number;
@@ -1955,6 +1933,12 @@ export interface PluginHost {
       endHz?: number;
       tapeDirection?: 'stop' | 'start';
       tapeSpanSeconds?: number;
+      /** delay effect only: delay time in beats (default 0.75 = dotted 8th). */
+      delayBeats?: number;
+      /** delay effect only: feedback 0..0.95 (default 0.45). */
+      feedback?: number;
+      /** delay effect only: wet mix 0..1 (default 0.5). */
+      mix?: number;
     },
   ): Promise<PluginSampleInfo>;
 
@@ -2493,21 +2477,20 @@ export interface PluginTrackRuntimeState {
 export type TrackStateChangeListener = (trackId: string, state: PluginTrackRuntimeState) => void;
 
 // ============================================================================
-// FX Detail Types (SDK-friendly re-export)
+// Managed FX
 // ============================================================================
 
-/** Per-category FX detail state */
-export interface PluginFxCategoryDetailState {
-  enabled: boolean;
-  presetIndex: number;  // 0-4
-  dryWet: number;       // 0.0-1.0
-}
-
-/** Full FX detail state for a track — one entry per FX category */
-export type PluginTrackFxDetailState = Record<string, PluginFxCategoryDetailState>;
+/**
+ * Closed set of host-managed FX intents for
+ * {@link PluginHost.applyManagedFxPreset}. The host maps each intent to a
+ * concrete effect chain internally — panels never address FX categories or
+ * presets directly.
+ * @since SDK 3.0.0
+ */
+export type ManagedFxIntent = 'safety-limiter';
 
 // ============================================================================
-// FX Automation Types
+// Automation Types
 // ============================================================================
 
 /**
@@ -2524,39 +2507,6 @@ export interface PluginAutomationPoint {
    * Leave unset unless you specifically want an eased segment.
    */
   curve?: number;
-}
-
-/**
- * One automatable parameter on a built-in FX.
- * @since SDK 2.63.0
- */
-export interface PluginFxParameterInfo {
-  /** Engine parameter index — stable for built-in FX. */
-  index: number;
-  /** Parameter name, the key used in {@link PluginHost.setTrackFxAutomation}. */
-  name: string;
-  currentValue: number;
-  minValue: number;
-  maxValue: number;
-  /**
-   * True when this is the category's dry/wet parameter — i.e. what the
-   * `'dryWet'` alias resolves to. At most one parameter per FX has it, and
-   * categories whose mix is not automatable (chorus, phaser) have none.
-   */
-  isDryWet?: boolean;
-}
-
-/**
- * Outcome of {@link PluginHost.setTrackFxAutomation}. Partial success is
- * reported rather than thrown: one unknown parameter name should not discard
- * the curves that DID resolve.
- * @since SDK 2.63.0
- */
-export interface PluginFxAutomationResult {
-  /** Parameters whose curves were written, with the resolved name. */
-  written: Array<{ name: string; pointCount: number }>;
-  /** Parameters that could not be written, each with a human-readable reason. */
-  skipped: Array<{ name: string; reason: string }>;
 }
 
 // ============================================================================

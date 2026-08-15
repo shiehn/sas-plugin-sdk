@@ -15,7 +15,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { BulkAddPlaceholderTrack } from '../types/plugin-sdk.types';
-import type { FxCategory } from '../types/fx-toggle.types';
 import { TrackRow, type SDKTrackRowProps } from '../components/TrackRow';
 import { CrossfadeTrackRow } from '../components/CrossfadeTrackRow';
 import { FadeTrackRow } from '../components/FadeTrackRow';
@@ -239,9 +238,6 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
     handlers,
     isExportingMidi,
     handleExportMidi,
-    handleFxToggle,
-    handleFxPresetChange,
-    handleFxDryWetChange,
     handleInstrumentSelect,
     handleShowEditor,
     handleBackToInstruments,
@@ -332,7 +328,6 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
           pan: track.runtimeState.pan,
         },
         soloedOut: anySolo && !track.runtimeState.solo,
-        fxDetailState: track.fxDetailState,
         drawerOpen: track.drawerOpen,
         drawerTab: track.drawerTab,
         onTabChange: (tab) => handlers.tabChange(id, tab),
@@ -351,10 +346,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
         onSoloToggle: () => handlers.soloToggle(id),
         onVolumeChange: (vol: number) => handlers.volumeChange(id, vol),
         onPanChange: (pan: number) => handlers.panChange(id, pan),
-        onFxToggle: (cat: FxCategory, enabled: boolean) => handleFxToggle(id, cat, enabled),
         externalFxHost: host,
-        onFxPresetChange: (cat: FxCategory, idx: number) => handleFxPresetChange(id, cat, idx),
-        onFxDryWetChange: (cat: FxCategory, val: number) => handleFxDryWetChange(id, cat, val),
         onToggleFxDrawer: () => handlers.toggleFxDrawer(id),
         onProgressChange: (pct: number) => handlers.progressChange(id, pct),
         accentColor: identity.accentColor,
@@ -396,9 +388,6 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
       setSoundImportTarget,
       soundHistory,
       handleRestoreSound,
-      handleFxToggle,
-      handleFxPresetChange,
-      handleFxDryWetChange,
       onAuditionNote,
       altTracksEnabled,
       resolvedAltGroups,
@@ -612,6 +601,10 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
         ) : (
           <>
             {panelBus.supported && panelBus.bus && (
+              // The ref gates the level subscription to on-screen strips —
+              // a collapsed/scrolled-away panel unsubscribes and the engine
+              // stream shuts off when no strip is visible anywhere.
+              <div ref={panelBus.meterVisibilityRef}>
               <PanelMasterStrip
                 bus={panelBus.bus}
                 levels={panelBus.levels}
@@ -675,6 +668,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
                     : undefined
                 }
               />
+              </div>
             )}
             {slots?.beforeRows}
             {resolvedCrossfadePairs.map((pair) => (

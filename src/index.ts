@@ -45,8 +45,7 @@ export type {
   PluginSynthInfo,
   PluginTrackRuntimeState,
   TrackStateChangeListener,
-  PluginFxCategoryDetailState,
-  PluginTrackFxDetailState,
+  ManagedFxIntent,
   MidiClipData,
   PluginMidiNote,
   MidiWriteResult,
@@ -143,33 +142,6 @@ export type {
 } from './types/plugin-sdk.types';
 
 export { PluginError } from './types/plugin-sdk.types';
-
-// ============================================================================
-// Types — FX toggle system
-// ============================================================================
-
-export type {
-  FxCategory,
-  FxPreset,
-  MixInterpolation,
-  FxPresetConfig,
-  FxCategoryDetailState,
-  TrackFxDetailState,
-  TrackFxState,
-  FxPresetDataEntry,
-  FxPresetData,
-} from './types/fx-toggle.types';
-
-export {
-  FX_CATEGORIES,
-  FX_CHAIN_ORDER,
-  FX_ENGINE_PLUGIN_NAMES,
-  FX_DISPLAY_LABELS,
-  EMPTY_FX_STATE,
-  DEFAULT_FX_DRY_WET,
-  DEFAULT_FX_CATEGORY_DETAIL,
-  EMPTY_FX_DETAIL_STATE,
-} from './types/fx-toggle.types';
 
 // ============================================================================
 // Components
@@ -298,7 +270,6 @@ export { useTrackExternalFx, type UseTrackExternalFxResult } from './hooks/useTr
 export { TrackFreezeSection, type TrackFreezeSectionProps } from './components/TrackFreezeSection';
 export { useTrackFreeze, type UseTrackFreezeResult } from './hooks/useTrackFreeze';
 export { PanSlider } from './components/PanSlider';
-export { FxToggleBar, type FxToggleBarProps } from './components/FxToggleBar';
 export { SorceryProgressBar, calculateTimeBasedTarget } from './components/SorceryProgressBar';
 export { DownloadPackButton, type DownloadPackButtonProps, type DownloadPackButtonVariant } from './components/DownloadPackButton';
 export {
@@ -375,7 +346,6 @@ export {
 // lives in the assistant (src/music-engine/constants/instrument-classification.ts)
 // and is exposed via that accessor.
 export { PLUGIN_SDK_VERSION } from './constants/sdk-version';
-export { FX_PRESET_CONFIGS } from './constants/fx-presets';
 
 // ============================================================================
 // Utils

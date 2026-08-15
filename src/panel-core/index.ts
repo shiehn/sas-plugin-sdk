@@ -21,7 +21,6 @@ export {
 export { type GeneratorTrackState, newTrackState } from './track-state';
 export {
   trackDataKey,
-  pluginFxToToggleFx,
   generationBlockedBy,
   type GenerationBlock,
   parseLLMNoteResponse,

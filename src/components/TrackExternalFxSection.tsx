@@ -20,7 +20,7 @@ import { useTrackExternalFx } from '../hooks/useTrackExternalFx';
 export interface TrackExternalFxSectionProps {
   /** The panel's host — used directly; the section manages its own state. */
   host: PluginHost;
-  /** ENGINE track id (the same id the panel passes to getTrackFxState). */
+  /** ENGINE track id (the id the panel receives on its track handles). */
   trackId: string;
   /** Disable all controls (e.g. while the track is generating). */
   disabled?: boolean;

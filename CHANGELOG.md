@@ -4,6 +4,39 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.0.0 — Built-in Tracktion FX removed (BREAKING)
+
+The product is 3rd-party-FX-only: the six built-in FX categories
+(eq/compressor/chorus/phaser/delay/reverb) — their sliders, presets and host
+surface — are gone. The host additionally strips legacy built-in FX nodes
+from every project on load (3rd-party inserts and their state are preserved
+byte-for-byte) and clears the old `fx_preset_data` recipes (migration 083).
+
+- **REMOVED components/exports**: `FxToggleBar`, everything from
+  `fx-toggle.types` (`FxCategory`, `TrackFxDetailState`,
+  `EMPTY_FX_DETAIL_STATE`, `FX_CATEGORIES`, …), `FX_PRESET_CONFIGS`,
+  `pluginFxToToggleFx`.
+- **REMOVED PluginHost methods**: `getTrackFxState`, `toggleTrackFx`,
+  `setTrackFxPreset`, `setTrackFxDryWet`, `listTrackFxParameters`,
+  `setTrackFxAutomation` (+ their types `PluginTrackFxDetailState`,
+  `PluginFxCategoryDetailState`, `PluginFxParameterInfo`,
+  `PluginFxAutomationResult`). `PluginAutomationPoint` stays
+  (`setTrackVolumeAutomation`).
+- **REMOVED TrackRow/TrackDrawer props**: `fxDetailState`, `fxState`,
+  `onFxToggle`, `onFxPresetChange`, `onFxDryWetChange`. The FX tab is now
+  gated purely on `externalFxHost` supporting `getTrackExternalFx` (or
+  `altTracks`), and its body is `TrackExternalFxSection` (+ alternatives).
+- **ADDED `applyManagedFxPreset?(trackId, intent)`** — closed intent set
+  (`ManagedFxIntent = 'safety-limiter'`): the one surviving internal use of
+  engine built-ins (brickwall limiter for coupled sound-design panels),
+  resolved by preset NAME host-side. Panels re-arm after adoption — built-ins
+  are stripped from disk on every load.
+- **`renderSampleEffect`** effect union gains `'delay'`: an offline
+  feedback-echo throw (optional `delayBeats`/`feedback`/`mix`), replacing the
+  old built-in delay path in loop transitions (which was silently broken).
+- `TrackFxCopyResult.builtIn` is always `[]` (kept for wire-shape compat);
+  `copyTrackFxFrom` copies external inserts only.
+
 ## 2.69.0 — Regenerating over existing MIDI asks first
 
 "Create" is the same button before and after a track has MIDI: the first press

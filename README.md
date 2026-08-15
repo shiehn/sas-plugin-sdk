@@ -63,7 +63,6 @@ Pre-built components that match the host app's visual style:
 | `TrackRow` | Full-featured track row with prompt input, generate/shuffle/copy buttons, mute/solo, volume/pan, FX drawer, instrument drawer, and progress overlay |
 | `VolumeSlider` | Compact horizontal volume slider (0-1) with dB tooltip |
 | `PanSlider` | Compact horizontal pan slider (-1 to +1) with double-click to center |
-| `FxToggleBar` | Per-track FX control panel with 6 categories, 5 presets each, and dry/wet sliders |
 | `SorceryProgressBar` | Animated progress bar with time-based pacing for long operations |
 | `InstrumentDrawer` | Searchable grid of available VST3/AU instrument plugins |
 | `DownloadPackButton` | Download/verify/extract button for a sample pack; driven through `host.startSamplePackDownload` + `host.onSamplePackProgress` (since 2.8.0) |
@@ -83,7 +82,7 @@ Pre-built components that match the host app's visual style:
 
 ```typescript
 import {
-  TrackRow, VolumeSlider, PanSlider, FxToggleBar, SorceryProgressBar,
+  TrackRow, VolumeSlider, PanSlider, SorceryProgressBar,
   SamplePackCTACard, DownloadPackButton,
 } from '@signalsandsorcery/plugin-sdk';
 

@@ -23,7 +23,6 @@ import { useRegenerateGuard } from '../hooks/useRegenerateGuard';
 import { VolumeSlider } from './VolumeSlider';
 import { PanSlider } from './PanSlider';
 import { SorceryProgressBar } from './SorceryProgressBar';
-import type { TrackFxDetailState, FxCategory } from '../types/fx-toggle.types';
 import { promptEnterToGenerate } from '../panel-core/panel-helpers';
 
 // ============================================================================
@@ -42,8 +41,6 @@ export interface SDKTrackRowProps {
    *  engine's effective-mute model silences it without touching user-mute. Purely
    *  visual; does not change mute/solo state. */
   soloedOut?: boolean;
-  /** FX category states */
-  fxDetailState: TrackFxDetailState;
   /** Whether the unified track drawer is open. */
   drawerOpen: boolean;
   /** Which tab the drawer is showing. */
@@ -83,12 +80,6 @@ export interface SDKTrackRowProps {
   onVolumeChange: (vol: number) => void;
   /** Pan slider */
   onPanChange: (pan: number) => void;
-  /** FX category toggle (optional — omit to hide FX button) */
-  onFxToggle?: (cat: FxCategory, enabled: boolean) => void;
-  /** FX preset select */
-  onFxPresetChange?: (cat: FxCategory, idx: number) => void;
-  /** FX dry/wet */
-  onFxDryWetChange?: (cat: FxCategory, val: number) => void;
   /** Third-party FX section in the drawer's FX tab — pass the panel's host
    *  (self-contained; renders nothing on hosts without the surface).
    *  @since SDK 2.39.0 */
@@ -192,7 +183,6 @@ export function TrackRow({
   prompt,
   runtimeState,
   soloedOut = false,
-  fxDetailState,
   drawerOpen,
   drawerTab,
   onTabChange,
@@ -212,9 +202,6 @@ export function TrackRow({
   onSoloToggle,
   onVolumeChange,
   onPanChange,
-  onFxToggle,
-  onFxPresetChange,
-  onFxDryWetChange,
   externalFxHost,
   altTracks,
   onToggleFxDrawer,
@@ -304,10 +291,6 @@ export function TrackRow({
     subject: track.name?.trim() || 'This track',
     testIdPrefix: 'track-regenerate-confirm',
   });
-
-  const hasFxActive = Object.values(fxDetailState).some(
-    (d: { enabled: boolean }) => d.enabled
-  );
 
   // The two row buttons open the SAME unified drawer to different tabs:
   // FX → the 'fx' tab; ▾ → a non-FX tab (History/Pick/Import).
@@ -584,9 +567,7 @@ export function TrackRow({
                     ? 'bg-sas-panel border-sas-border text-sas-muted/50 cursor-not-allowed'
                     : fxTabOpen
                       ? 'bg-sas-accent border-sas-accent text-sas-bg'
-                      : hasFxActive
-                        ? 'bg-sas-accent/20 border-sas-accent text-sas-accent hover:bg-sas-accent hover:text-sas-bg'
-                        : 'bg-sas-panel-alt border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent'
+                      : 'bg-sas-panel-alt border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent'
                 }`}
                 title={fxTabOpen ? 'Hide FX controls' : 'Show FX controls'}
               >
@@ -650,10 +631,6 @@ export function TrackRow({
             activeTab={drawerTab}
             onTabChange={onTabChange}
             trackId={track.id}
-            fxState={fxDetailState}
-            onFxToggle={onFxToggle}
-            onFxPresetChange={onFxPresetChange}
-            onFxDryWetChange={onFxDryWetChange}
             externalFxHost={externalFxHost}
             altTracks={altTracks}
             freeze={freeze}
