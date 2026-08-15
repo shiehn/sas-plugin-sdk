@@ -98,16 +98,14 @@ export interface GeneratorPanelCore {
   xfFromId: string | null;
   xfToId: string | null;
 
-  // Import modals
+  // Import: a modal for whole tracks, the drawer's inline browser for sounds
   importOpen: boolean;
   setImportOpen(open: boolean): void;
-  soundImportTarget: GeneratorTrackState | null;
-  setSoundImportTarget(t: GeneratorTrackState | null): void;
-  handleSoundImportPick(sel: {
-    sourceTrackDbId: string;
-    trackName: string;
-    sceneName: string;
-  }): Promise<void>;
+  /** Apply a picked source sound to `target` (the drawer Import tab's row). */
+  handleSoundImportPickFor(
+    target: GeneratorTrackState,
+    sel: { sourceTrackDbId: string; trackName: string; sceneName: string },
+  ): Promise<void>;
   handlePortTrack(sel: {
     sourceTrackDbId: string;
     trackName: string;
@@ -258,7 +256,6 @@ export function useGeneratorPanelCore({
   const [isLoadingTracks, setIsLoadingTracks] = useState(false);
   const [groupBroadcast, setGroupBroadcast] = useState<GroupBroadcastProgress | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  const [soundImportTarget, setSoundImportTarget] = useState<GeneratorTrackState | null>(null);
   const [designerView, setDesignerView] = useState(false);
   const [transitionSourceTotal, setTransitionSourceTotal] = useState(0);
   const [crossfadePairsMeta, setCrossfadePairsMeta] = useState<CrossfadePairMeta[]>([]);
@@ -759,7 +756,7 @@ export function useGeneratorPanelCore({
     [adapter, activeSceneId, loadTracks, logTag],
   );
 
-  // NOTE: handleSoundImportPick lives BELOW makeServices — it broadcasts to
+  // NOTE: handleSoundImportPickFor lives BELOW makeServices — it broadcasts to
   // linked siblings via broadcastSoundFromTrack, whose deps include
   // makeServices (defining it here would read the binding before
   // initialization at render time).
@@ -1219,7 +1216,7 @@ export function useGeneratorPanelCore({
     [adapter, makeServices, soundHistory, host, logTag],
   );
 
-  // Instrument twin of the sound broadcast (@since SDK 2.48.0): a Pick-tab
+  // Instrument twin of the sound broadcast (@since SDK 2.48.0): a Synth-tab
   // instrument swap on a linked track loads the SAME plugin on every sibling
   // ("set the sound once" covers the instrument itself, not just Surge
   // patches). Siblings get the plugin's default state — later tweaks inside
@@ -1316,14 +1313,16 @@ export function useGeneratorPanelCore({
     [soundHistory, broadcastSoundFromTrack],
   );
 
-  // --- Sound import (drawer "Import <noun>") ------------------------------
-  const handleSoundImportPick = useCallback(
-    async (sel: { sourceTrackDbId: string; trackName: string; sceneName: string }): Promise<void> => {
-      const target = soundImportTarget;
-      if (!target || !host.getTrackSound) {
-        setSoundImportTarget(null);
-        return;
-      }
+  // --- Sound import (drawer Import tab) -----------------------------------
+  // The destination arrives as an argument: the tab's inline browser lives on
+  // the row that owns it, so there is no "which track did they click?" state
+  // to carry (the modal it replaced needed one).
+  const handleSoundImportPickFor = useCallback(
+    async (
+      target: GeneratorTrackState,
+      sel: { sourceTrackDbId: string; trackName: string; sceneName: string },
+    ): Promise<void> => {
+      if (!host.getTrackSound) return;
       const noun = adapter.sound.importNoun;
       const nounTitle = noun.charAt(0).toUpperCase() + noun.slice(1);
       try {
@@ -1344,11 +1343,9 @@ export function useGeneratorPanelCore({
         await broadcastSoundFromTrack(target.handle.id, descriptor, snap.label);
       } catch (err: unknown) {
         host.showToast('error', 'Import failed', err instanceof Error ? err.message : String(err));
-      } finally {
-        setSoundImportTarget(null);
       }
     },
-    [soundImportTarget, host, adapter, identity.familyKey, soundHistory, broadcastSoundFromTrack],
+    [host, adapter, identity.familyKey, soundHistory, broadcastSoundFromTrack],
   );
 
   // --- Generate (core wrapper; adapter strategy owns the body) ------------
@@ -1921,9 +1918,7 @@ export function useGeneratorPanelCore({
     xfToId,
     importOpen,
     setImportOpen,
-    soundImportTarget,
-    setSoundImportTarget,
-    handleSoundImportPick,
+    handleSoundImportPickFor,
     handlePortTrack,
     handleImportedTrack,
     transition,

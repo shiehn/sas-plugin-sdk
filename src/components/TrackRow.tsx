@@ -111,7 +111,7 @@ export interface SDKTrackRowProps {
   /** Re-scan for instruments */
   onRefreshInstruments?: () => void;
   // --- Instrument Editor (Stage 2) ---
-  /** Pick-tab sub-view: native plugin editor instead of the instrument grid. */
+  /** Synth-tab sub-view: native plugin editor instead of the instrument grid. */
   editorStage?: boolean;
   /** Called when user clicks "Open Editor" */
   onShowEditor?: () => void;
@@ -130,6 +130,12 @@ export interface SDKTrackRowProps {
   onImportSound?: () => void;
   /** Sound-import button label ("Import Sample" / "Import Preset"). */
   importSoundLabel?: string;
+  /**
+   * Apply a picked source sound to this track (@since SDK 3.1.0). Wiring it
+   * turns the drawer's Import tab into an inline scene → track browser instead
+   * of a button that opens a modal. See TrackDrawerProps.onImportPick.
+   */
+  onImportPick?: TrackDrawerProps['onImportPick'];
   /**
    * Linked-group hint (@since SDK 2.48.0): when set, the drawer shows this
    * info line on every tab and the Shuffle button gains a small 🔗 marker +
@@ -224,6 +230,7 @@ export function TrackRow({
   onToggleFavorite,
   onImportSound,
   importSoundLabel,
+  onImportPick,
   linkedSoundHint,
   onSyncSoundToGroup,
   editNotes,
@@ -650,6 +657,7 @@ export function TrackRow({
             onToggleFavorite={onToggleFavorite}
             onImportSound={onImportSound}
             importSoundLabel={importSoundLabel}
+            onImportPick={onImportPick}
             linkedSoundHint={linkedSoundHint}
             editNotes={editNotes}
             onNotesChange={onNotesChange}

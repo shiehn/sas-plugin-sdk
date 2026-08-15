@@ -10,7 +10,14 @@
  *
  * Visual idiom mirrors PanelMasterStrip's FX chips + picker grid: chip =
  * bypass dot + name (opens the native editor) + remove ✕; the picker is the
- * TrackDrawer Pick-tab grid over FX descriptors with a search box.
+ * TrackDrawer Synth-tab grid over FX descriptors with a search box.
+ *
+ * The picker is OPEN on mount and stays open after a pick — this section is
+ * the whole FX tab, so hiding the grid behind FX + made choosing an FX a
+ * two-click dive that the neighbouring Synth tab never imposed. FX +/▴ is now
+ * a collapse control. (The panel-bus strip keeps its closed-by-default gate:
+ * it is a one-line control visible in every panel header, not a drawer you
+ * opened on purpose.)
  */
 
 import React, { useMemo, useRef, useState } from 'react';
@@ -185,7 +192,11 @@ export function TrackExternalFxSection({
               ? 'border-sas-accent text-sas-accent bg-sas-accent/10'
               : 'border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent'
           } disabled:opacity-50`}
-          title={pickerOpen ? 'Close the FX picker' : 'Add a VST3/AU FX plugin to this track'}
+          title={
+            pickerOpen
+              ? 'Hide the FX picker'
+              : 'Show the FX picker — add a VST3/AU FX plugin to this track'
+          }
         >
           {pickerOpen ? 'FX ▴' : 'FX +'}
         </button>
@@ -220,10 +231,10 @@ export function TrackExternalFxSection({
                 <button
                   key={candidate.pluginId}
                   data-testid={`track-fx-pick-${candidate.pluginId}`}
-                  onClick={() => {
-                    onAddFx(candidate.pluginId);
-                    setPickerOpen(false);
-                  }}
+                  // The grid stays up after a pick: the new chip appears in
+                  // the row above, and stacking a comp + a reverb shouldn't
+                  // cost a re-open.
+                  onClick={() => onAddFx(candidate.pluginId)}
                   disabled={disabled}
                   className="flex flex-col items-start px-2 py-1.5 rounded-sm border text-left transition-colors border-sas-border bg-sas-panel-alt text-sas-muted hover:border-sas-accent hover:text-sas-accent disabled:opacity-50"
                   title={`${candidate.name} by ${candidate.manufacturer} (${candidate.type.toUpperCase()})`}

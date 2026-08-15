@@ -190,6 +190,11 @@ export {
 export { FadeModal, type FadeModalProps, type FadeSelection } from './components/FadeModal';
 export { ImportTrackModal, type ImportTrackModalProps } from './components/ImportTrackModal';
 export {
+  ImportTrackBrowser,
+  type ImportTrackBrowserProps,
+  type ImportTrackBrowserSelection,
+} from './components/ImportTrackBrowser';
+export {
   CrossfadeModal,
   type CrossfadeModalProps,
   type CrossfadeSelection,

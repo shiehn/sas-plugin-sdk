@@ -209,9 +209,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
     xfToId,
     importOpen,
     setImportOpen,
-    soundImportTarget,
-    setSoundImportTarget,
-    handleSoundImportPick,
+    handleSoundImportPickFor,
     handleRestoreSound,
     handlePortTrack,
     handleImportedTrack,
@@ -283,9 +281,18 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
             onBackToInstruments: () => handleBackToInstruments(id),
           }
         : {};
-      const importSoundProps = features.importTracks
+      // The Import tab browses scenes inline (@since SDK 3.1.0) — no modal, and
+      // no "which row asked?" state, because the pick is applied to `track`.
+      // Same host gate the sound modal used to carry, so an older host grows no
+      // tab rather than an unusable one.
+      const importSoundProps =
+        features.importTracks && host.listImportableTracks && host.getTrackSound
         ? {
-            onImportSound: () => setSoundImportTarget(track),
+            onImportPick: (sel: {
+              sourceTrackDbId: string;
+              trackName: string;
+              sceneName: string;
+            }) => handleSoundImportPickFor(track, sel),
             importSoundLabel: adapter.sound.importSoundLabel,
           }
         : {};
@@ -372,6 +379,8 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
     [
       features.instrumentPicker,
       features.importTracks,
+      // Read for `externalFxHost` and the import-capability gate below.
+      host,
       adapter,
       supportsMeters,
       trackLevels,
@@ -385,7 +394,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
       handleRefreshInstruments,
       handleShowEditor,
       handleBackToInstruments,
-      setSoundImportTarget,
+      handleSoundImportPickFor,
       soundHistory,
       handleRestoreSound,
       onAuditionNote,
@@ -552,18 +561,9 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
           testIdPrefix={`${identity.familyKey}-import`}
         />
       )}
-      {features.importTracks && host.listImportableTracks && host.getTrackSound && (
-        <ImportTrackModal
-          host={host}
-          mode="sound"
-          open={!!soundImportTarget}
-          title={adapter.sound.importSoundLabel}
-          onClose={() => setSoundImportTarget(null)}
-          onImported={() => {}}
-          onPick={handleSoundImportPick}
-          testIdPrefix={`${identity.familyKey}-sound-import`}
-        />
-      )}
+      {/* No sound-import modal: the drawer's Import tab browses scenes inline
+          (SDK 3.1.0). The whole-track import above still needs one — it is
+          launched from the panel header, not from a row. */}
       {slots?.modals}
       {canCrossfade && xfFromId && xfToId && (
         <div className={designerView ? 'contents' : 'hidden'}>

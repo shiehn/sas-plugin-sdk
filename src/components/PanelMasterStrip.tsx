@@ -3,7 +3,7 @@
  *
  * One compact strip: BUS label + master fader + M/S + the bus FX chain as
  * chips (bypass toggle, remove, optional native-editor open) + an "FX +"
- * picker that reuses the TrackDrawer Pick-tab grid idiom over FX descriptors.
+ * picker that reuses the TrackDrawer Synth-tab grid idiom over FX descriptors.
  *
  * Fully CONTROLLED and presentational: the panel owns `bus` (from
  * `host.getPanelBusState`), the picker-open flag, and wires every callback to
@@ -550,7 +550,7 @@ export function PanelMasterStrip({
         </button>
       </div>
 
-      {/* FX picker (TrackDrawer Pick-tab grid idiom, over FX descriptors) */}
+      {/* FX picker (TrackDrawer Synth-tab grid idiom, over FX descriptors) */}
       {fxPickerOpen && (
         <div data-testid="bus-fx-picker" className="flex flex-col gap-2 pt-1">
           <div className="flex items-center gap-2">

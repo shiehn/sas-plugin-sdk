@@ -4,9 +4,13 @@
  * ONE drawer with a flat contextual tab strip. Which tabs appear is computed
  * from which callbacks the host panel provides:
  *   - FX      (externalFxHost) — 3rd-party FX chips + picker (TrackExternalFxSection)
- *   - Pick    (onSelect)       — instrument-plugin picker (+ native editor stage)
+ *   - Synth   (onSelect)       — instrument-plugin picker (+ native editor stage);
+ *                                the tab KEY is still `pick`
  *   - History (onRestoreSound) — sounds this track has had (restore / favorite)
- *   - Import  (onImportSound)  — copy a sound from a matching track in another scene
+ *   - Import  (onImportPick / onImportSound)
+ *                              — copy a sound from a matching track in another
+ *                                scene; the chooser renders INLINE when the
+ *                                panel wires onImportPick
  *
  * The active tab is CONTROLLED by the host (activeTab / onTabChange) so the
  * track row's FX button and ▾ button can open the SAME drawer to a chosen tab.
@@ -23,6 +27,10 @@ import type { InstrumentDescriptor, PluginHost, SoundHistoryEntry, PluginMidiNot
 import { PianoRollEditor } from './PianoRollEditor';
 import { TrackExternalFxSection } from './TrackExternalFxSection';
 import {
+  ImportTrackBrowser,
+  type ImportTrackBrowserSelection,
+} from './ImportTrackBrowser';
+import {
   TrackAlternativesSection,
   type TrackAlternativesSectionProps,
 } from './TrackAlternativesSection';
@@ -36,9 +44,13 @@ import { useTrackFreeze, type UseTrackFreezeResult } from '../hooks/useTrackFree
 /** The contextual tabs a track drawer can show, in display order. */
 export type DrawerTab = 'fx' | 'pick' | 'history' | 'import' | 'edit' | 'freeze';
 
+// The `pick` tab is only ever enabled by the Surge XT panels (synth, bass,
+// pad, ensemble, arpeggiator, livecode — `features.instrumentPicker`), so its
+// label names what it picks. Drum/instrument deliberately omit `onSelect` and
+// never grow the tab. The KEY stays `pick` (and so does its test id).
 const TAB_LABELS: Record<DrawerTab, string> = {
   fx: 'FX',
-  pick: 'Pick',
+  pick: 'Synth',
   history: 'History',
   import: 'Import',
   edit: 'Edit',
@@ -83,14 +95,14 @@ export interface TrackDrawerProps {
    */
   freeze?: UseTrackFreezeResult;
 
-  // --- Pick tab (enabled when onSelect is provided) ---
+  // --- Synth tab (enabled when onSelect is provided) ---
   /** Available instrument plugins from engine scan. */
   instruments?: InstrumentDescriptor[];
   /** Currently loaded instrument plugin ID (null = default Surge XT). */
   currentPluginId?: string | null;
   /** Whether the instrument scan is still in progress. */
   isLoading?: boolean;
-  /** Called when user selects an instrument (presence enables the Pick tab). */
+  /** Called when user selects an instrument (presence enables the Synth tab). */
   onSelect?: (pluginId: string) => void;
   /** Re-scan plugins. */
   onRefresh?: () => void;
@@ -116,6 +128,14 @@ export interface TrackDrawerProps {
   onImportSound?: () => void;
   /** Button label, e.g. "Import Sample" (drums/instruments) or "Import Preset" (synths). */
   importSoundLabel?: string;
+  /**
+   * Apply the chosen source sound to THIS track (@since SDK 3.1.0). When
+   * provided — together with a host that can list candidates — the Import tab
+   * renders the scene → track browser INLINE instead of a button that opens a
+   * modal, so the tab shows its options the moment you select it. Panels that
+   * only pass `onImportSound` keep the button.
+   */
+  onImportPick?: (sel: ImportTrackBrowserSelection) => void | Promise<void>;
 
   /**
    * Linked-group hint (@since SDK 2.48.0): shown in the drawer header on
@@ -171,6 +191,7 @@ export function TrackDrawer({
   onRestoreSound,
   onToggleFavorite,
   onImportSound,
+  onImportPick,
   importSoundLabel,
   linkedSoundHint,
   editNotes,
@@ -188,7 +209,14 @@ export function TrackDrawer({
     typeof externalFxHost?.getTrackExternalFx === 'function' || !!altTracks;
   const pickEnabled = !!onSelect;
   const historyEnabled = !!onRestoreSound;
-  const importEnabled = !!onImportSound;
+  // The browser IS the tab when the panel can apply a pick itself AND the host
+  // can enumerate candidates: selecting Import lands you on the scene list, no
+  // button in between. Panels still on the modal flow (only `onImportSound`
+  // wired) keep the button. Gating the TAB on the same pair is what keeps a
+  // dead control off screen — an `onImportPick` the host can't feed would
+  // otherwise fall through to a button with no handler.
+  const inlineImport = !!onImportPick && !!externalFxHost?.listImportableTracks;
+  const importEnabled = !!onImportSound || inlineImport;
   const editEnabled = !!onNotesChange;
   // Freeze tab (@since SDK 2.46.0): rides the SAME host the FX tab already
   // receives from every panel, feature-detected — old hosts simply don't
@@ -389,15 +417,25 @@ export function TrackDrawer({
           Copy the sound from a matching track in another scene — your MIDI stays, only the{' '}
           {soundNoun} changes.
         </p>
-        <button
-          type="button"
-          data-testid="sdk-drawer-import-sound"
-          onClick={onImportSound}
-          className="w-full px-2 py-1.5 text-[11px] rounded-sm border border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent transition-colors"
-          title="Copy a sound from a track in another scene (ignores contract)"
-        >
-          ⇪ {importSoundLabel ?? 'Import Sound'}
-        </button>
+        {inlineImport && externalFxHost ? (
+          <ImportTrackBrowser
+            host={externalFxHost}
+            mode="sound"
+            onPick={onImportPick}
+            variant="inline"
+            testIdPrefix="sdk-drawer-import"
+          />
+        ) : (
+          <button
+            type="button"
+            data-testid="sdk-drawer-import-sound"
+            onClick={onImportSound}
+            className="w-full px-2 py-1.5 text-[11px] rounded-sm border border-sas-border text-sas-muted hover:border-sas-accent hover:text-sas-accent transition-colors"
+            title="Copy a sound from a track in another scene (ignores contract)"
+          >
+            ⇪ {importSoundLabel ?? 'Import Sound'}
+          </button>
+        )}
       </div>
     );
   }
@@ -466,7 +504,7 @@ export function TrackDrawer({
     );
   }
 
-  // ---- Pick tab: native editor stage ----
+  // ---- Synth tab: native editor stage ----
   if (effectiveTab === 'pick' && editorStage) {
     return (
       <div className="flex flex-col gap-2">
@@ -492,7 +530,7 @@ export function TrackDrawer({
     );
   }
 
-  // ---- Pick tab: instrument grid (default) ----
+  // ---- Synth tab: instrument grid (default) ----
   const isDefaultSelected = currentPluginId === null;
   const isSelected = (pluginId: string): boolean => pluginId === currentPluginId;
 

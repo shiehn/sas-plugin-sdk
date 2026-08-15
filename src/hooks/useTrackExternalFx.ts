@@ -49,7 +49,11 @@ export function useTrackExternalFx(host: PluginHost, trackId: string): UseTrackE
   const [fx, setFx] = useState<TrackExternalFxEntry[] | null>(null);
   const [availableFx, setAvailableFx] = useState<InstrumentDescriptor[]>([]);
   const [fxLoading, setFxLoading] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  // Open by default: this section IS the drawer's FX tab, and the tab is only
+  // mounted once the user has deliberately opened a drawer on it. Hiding the
+  // picker behind a toggle made "add an FX" a two-click dive; the Synth tab
+  // never did that. The FX +/▴ button survives purely as a collapse control.
+  const [pickerOpen, setPickerOpen] = useState(true);
   const fxLoadedRef = useRef(false);
   // Stale-track guard: a slow read for the PREVIOUS track must not clobber
   // the current track's list (same shape as usePanelBus's scene guard).
@@ -69,12 +73,6 @@ export function useTrackExternalFx(host: PluginHost, trackId: string): UseTrackE
       // the next mutation or remount converges.
     }
   }, [host, trackId, supported]);
-
-  useEffect(() => {
-    setFx(null);
-    setPickerOpen(false);
-    void reload();
-  }, [reload]);
 
   const loadFxList = useCallback(
     async (opts: { force?: boolean; rescan?: boolean }): Promise<void> => {
@@ -101,6 +99,17 @@ export function useTrackExternalFx(host: PluginHost, trackId: string): UseTrackE
     },
     [host, supported]
   );
+
+  useEffect(() => {
+    setFx(null);
+    setPickerOpen(true);
+    void reload();
+    // The picker is open from the start, so its descriptors have to arrive
+    // with it — the toggle is no longer the trigger. Still a cache read
+    // (`fxLoadedRef` short-circuits repeats), and the section only mounts
+    // when a drawer is actually open on the FX tab.
+    void loadFxList({});
+  }, [reload, loadFxList]);
 
   const openPicker = useCallback(
     (open: boolean): void => {

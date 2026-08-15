@@ -4,6 +4,40 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.1.0 — The track drawer stops hiding its options
+
+Selecting a drawer tab now shows what that tab is for. The FX tab used to open
+on `3RD-PARTY FX  none  [FX +]` and the Import tab on a single button — both
+made choosing a thing a two-click dive that the instrument-picker tab never
+imposed.
+
+- **FX tab**: `TrackExternalFxSection`'s picker is open on mount and **stays
+  open after a pick**, so a comp and a reverb go on back-to-back. `FX +` / `FX ▴`
+  survives as a collapse control. `useTrackExternalFx` moves its
+  `getAvailableFx` cache read from the toggle to the mount effect. The
+  panel-bus strip (`PanelMasterStrip`) deliberately keeps its closed-by-default
+  gate — it is a one-line control visible in every panel header, not a drawer
+  you opened on purpose.
+- **Import tab**: renders the scene → track chooser INLINE.
+  - **NEW `ImportTrackBrowser`** — the two-step drill-down extracted out of
+    `ImportTrackModal` (whose props and test ids are unchanged; it is now
+    chrome + browser). `variant='inline'` drops the modal's fixed width and
+    scroll box and shows a header row only while drilled into a scene.
+  - **NEW `TrackDrawer` / `TrackRow` prop `onImportPick(sel)`** — apply a picked
+    source sound to THAT row's track. Wiring it swaps the button for the inline
+    browser; `onImportSound` alone still renders the button. Either prop now
+    enables the tab.
+  - **REMOVED from `useGeneratorPanelCore`**: `soundImportTarget` /
+    `setSoundImportTarget`, and `handleSoundImportPick` becomes
+    **`handleSoundImportPickFor(target, sel)`** — the destination arrives as an
+    argument because the browser lives in the row that owns it. The shell no
+    longer renders a `mode='sound'` `ImportTrackModal` (the whole-track import,
+    launched from the panel header, keeps its modal).
+- **RENAMED tab label**: `Pick` → **`Synth`**. The tab key (`pick`), the
+  `DrawerTab` union and `data-testid="sdk-drawer-tab-pick"` are unchanged. Only
+  the six Surge XT panels ever enable it (`features.instrumentPicker`); drum and
+  instrument omit `onSelect` and never grow the tab.
+
 ## 3.0.0 — Built-in Tracktion FX removed (BREAKING)
 
 The product is 3rd-party-FX-only: the six built-in FX categories
