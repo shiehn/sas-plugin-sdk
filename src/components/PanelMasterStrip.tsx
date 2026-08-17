@@ -38,6 +38,16 @@ const SIDECHAIN_SOURCES: ReadonlyArray<{ id: PanelBusSidechainState['source']; l
   { id: 'eighths', label: '8ths' },
 ];
 
+/** Duck length divisions — how long each dip lasts. 'preset' keeps the
+ *  preset curve's own span; 'bar' follows the scene's meter. */
+const SIDECHAIN_LENGTHS: ReadonlyArray<{ id: PanelBusSidechainState['length']; label: string }> = [
+  { id: 'preset', label: 'Auto' },
+  { id: '1/8', label: '1/8' },
+  { id: '1/4', label: '1/4' },
+  { id: '1/2', label: '1/2' },
+  { id: 'bar', label: 'Bar' },
+];
+
 /** What the motion envelope drives. */
 const MOTION_TARGETS: ReadonlyArray<{ id: PanelBusMotionState['target']; label: string }> = [
   { id: 'filter', label: 'Filt' },
@@ -115,6 +125,8 @@ export interface PanelMasterStripProps {
   onSidechainPresetChange?: (presetId: PanelBusSidechainState['presetId']) => void;
   /** Optional (2.54.0 hosts): duck onset source select. */
   onSidechainSourceChange?: (source: PanelBusSidechainState['source']) => void;
+  /** Optional (3.2.0 hosts): tempo-synced duck length select. */
+  onSidechainLengthChange?: (length: PanelBusSidechainState['length']) => void;
 
   /**
    * Motion (tempo-locked filter wobble) cluster — renders ONLY when all four
@@ -151,6 +163,7 @@ export function PanelMasterStrip({
   onSidechainAmountChange,
   onSidechainPresetChange,
   onSidechainSourceChange,
+  onSidechainLengthChange,
   motion = null,
   onMotionAmountChange,
   onMotionRateChange,
@@ -324,6 +337,25 @@ export function PanelMasterStrip({
                 {SIDECHAIN_SOURCES.map((src) => (
                   <option key={src.id} value={src.id}>
                     {src.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            {onSidechainLengthChange && (
+              <select
+                data-testid="bus-sidechain-length"
+                value={sidechain.length ?? 'preset'}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                  onSidechainLengthChange(e.target.value as PanelBusSidechainState['length'])
+                }
+                disabled={disabled}
+                className="sas-input text-[10px] px-1 py-0.5"
+                aria-label="Sidechain duck length"
+                title="How long each dip lasts: Auto follows the preset curve, the divisions rescale it to a musical length"
+              >
+                {SIDECHAIN_LENGTHS.map((len) => (
+                  <option key={len.id} value={len.id}>
+                    {len.label}
                   </option>
                 ))}
               </select>

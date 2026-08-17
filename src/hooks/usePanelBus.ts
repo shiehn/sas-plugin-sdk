@@ -74,6 +74,8 @@ export interface UsePanelBusResult {
   onSidechainPresetChange: (presetId: PanelBusSidechainState['presetId']) => void;
   /** Switch the duck's onset source (kicks | ghost grids). @since 2.54.0 */
   onSidechainSourceChange: (source: PanelBusSidechainState['source']) => void;
+  /** Set how long each dip lasts, as a musical division. @since 3.2.0 */
+  onSidechainLengthChange: (length: PanelBusSidechainState['length']) => void;
   /**
    * Motion (tempo-locked filter wobble) state — null until loaded or on
    * hosts without the surface (pre-2.54). @since 2.54.0
@@ -380,18 +382,27 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
       const clamped = Math.max(0, Math.min(1, amount));
       const presetId = sidechain?.presetId ?? 'classic';
       const source = sidechain?.source ?? 'kicks';
+      const length = sidechain?.length ?? 'preset';
       // Local echo so the knob tracks the drag; the host write debounces.
       setSidechain((prev) =>
         prev
           ? { ...prev, amount: clamped, engaged: true }
-          : { engaged: true, amount: clamped, presetId, source, kickTrackCount: 0, kickOnsetCount: 0 }
+          : {
+              engaged: true,
+              amount: clamped,
+              presetId,
+              source,
+              length,
+              kickTrackCount: 0,
+              kickOnsetCount: 0,
+            }
       );
       if (sidechainDebounceRef.current) clearTimeout(sidechainDebounceRef.current);
       sidechainDebounceRef.current = setTimeout(() => {
         sidechainDebounceRef.current = null;
         void (async () => {
           try {
-            await host.setPanelBusSidechain!(activeSceneId, clamped, presetId, source);
+            await host.setPanelBusSidechain!(activeSceneId, clamped, presetId, source, length);
           } catch {
             // surfaced by the host layer; reload below converges
           }
@@ -403,10 +414,11 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
       if (!sidechainSupported || !activeSceneId || !host.setPanelBusSidechain) return;
       const amount = sidechain?.amount ?? 0;
       const source = sidechain?.source ?? 'kicks';
+      const length = sidechain?.length ?? 'preset';
       setSidechain((prev) => (prev ? { ...prev, presetId, engaged: true } : prev));
       void (async () => {
         try {
-          await host.setPanelBusSidechain!(activeSceneId, amount, presetId, source);
+          await host.setPanelBusSidechain!(activeSceneId, amount, presetId, source, length);
         } catch {
           // surfaced by the host layer; reload below converges
         }
@@ -417,10 +429,26 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
       if (!sidechainSupported || !activeSceneId || !host.setPanelBusSidechain) return;
       const amount = sidechain?.amount ?? 0;
       const presetId = sidechain?.presetId ?? 'classic';
+      const length = sidechain?.length ?? 'preset';
       setSidechain((prev) => (prev ? { ...prev, source, engaged: true } : prev));
       void (async () => {
         try {
-          await host.setPanelBusSidechain!(activeSceneId, amount, presetId, source);
+          await host.setPanelBusSidechain!(activeSceneId, amount, presetId, source, length);
+        } catch {
+          // surfaced by the host layer; reload below converges
+        }
+        await reloadSidechain();
+      })();
+    },
+    onSidechainLengthChange: (length: PanelBusSidechainState['length']) => {
+      if (!sidechainSupported || !activeSceneId || !host.setPanelBusSidechain) return;
+      const amount = sidechain?.amount ?? 0;
+      const presetId = sidechain?.presetId ?? 'classic';
+      const source = sidechain?.source ?? 'kicks';
+      setSidechain((prev) => (prev ? { ...prev, length, engaged: true } : prev));
+      void (async () => {
+        try {
+          await host.setPanelBusSidechain!(activeSceneId, amount, presetId, source, length);
         } catch {
           // surfaced by the host layer; reload below converges
         }

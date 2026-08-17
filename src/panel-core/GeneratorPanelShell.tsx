@@ -642,6 +642,11 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
                     ? panelBus.onSidechainSourceChange
                     : undefined
                 }
+                onSidechainLengthChange={
+                  adapter.features.busSidechain && panelBus.sidechainSupported
+                    ? panelBus.onSidechainLengthChange
+                    : undefined
+                }
                 motion={
                   adapter.features.busMotion && panelBus.motionSupported
                     ? panelBus.motion

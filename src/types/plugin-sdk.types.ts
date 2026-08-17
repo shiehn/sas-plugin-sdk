@@ -264,6 +264,14 @@ export interface PanelBusLevelsUpdate extends PanelBusLevels {
  * (mute-independent, auto-follows new/regenerated kicks); the user's only
  * inputs are `amount` and `presetId`. @since SDK 2.52.0
  */
+/**
+ * How long one duck dip lasts, as a musical division — the tempo-synced
+ * "length" knob every trigger-shaper ships. 'preset' keeps the preset
+ * curve's own hold+release span; the rest rescale it to fit, and 'bar'
+ * follows the scene's meter. @since SDK 3.2.0
+ */
+export type PanelBusDuckLength = 'preset' | '1/8' | '1/4' | '1/2' | 'bar';
+
 export interface PanelBusSidechainState {
   /** True once the user has touched the control (config persisted). */
   engaged: boolean;
@@ -273,6 +281,10 @@ export interface PanelBusSidechainState {
   /** Onset source: real kick MIDI (default), or a synthetic ghost grid for
    *  kick-free pumping. @since SDK 2.54.0 */
   source: 'kicks' | 'four-floor' | 'eighths';
+  /** How long each dip lasts, as a musical division. 'preset' keeps the
+   *  preset curve's own span. Absent on pre-3.2.0 hosts — read it as
+   *  'preset'. @since SDK 3.2.0 */
+  length?: PanelBusDuckLength;
   /** Trigger tracks found in the scene (the "no kicks" hint when 0 and
    *  source is 'kicks'). */
   kickTrackCount: number;
@@ -1286,7 +1298,8 @@ export interface PluginHost {
     sceneId: string,
     amount: number,
     presetId: 'subtle' | 'classic' | 'hard',
-    source?: 'kicks' | 'four-floor' | 'eighths'
+    source?: 'kicks' | 'four-floor' | 'eighths',
+    length?: PanelBusDuckLength
   ): Promise<void>;
 
   /**
