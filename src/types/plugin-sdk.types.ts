@@ -194,6 +194,14 @@ export interface TrackFreezeState {
   wavPath?: string;
   /** A fresh inactive freeze exists — re-freezing is instant. */
   latentFreshFreeze: boolean;
+  /**
+   * False when this track can NEVER be frozen however it is edited — today
+   * only tracks in a transition scene (their live volume-automation fades
+   * would bake into the stem and then apply twice). The row's ❄ toggle hides
+   * rather than offering a button that is certain to fail. Absent on hosts
+   * older than the field: treat undefined as freezable. @since SDK 3.3.0
+   */
+  freezable?: boolean;
 }
 
 /**
@@ -899,6 +907,47 @@ export interface PluginHost {
    * @since SDK 1.2.0
    */
   replaceTrackAudio?(trackId: string, audioPath: string): Promise<void>;
+
+  // --- Vocal rendering (speech forced onto MIDI pitches) ---
+
+  /**
+   * Speak each syllable with a system speech voice and force its pitch to the
+   * MIDI note it was given, returning one rendered WAV for the whole line.
+   *
+   * The host synthesises each syllable separately (macOS `say`, Windows SAPI)
+   * and hands the fragments to `sas-audio-tool vox`, which uses WORLD to
+   * replace the speaker's F0 with the requested note while keeping their
+   * spectral envelope. Rendering is OFFLINE — the result is a normal audio
+   * file, so freeze, export and the arranger all behave normally.
+   *
+   * Optional: hosts before 3.4.0 do not implement it, so callers must probe
+   * with `typeof host.renderVocalLine === 'function'` and degrade clearly.
+   * @since SDK 3.4.0
+   */
+  renderVocalLine?(request: RenderVocalLineRequest): Promise<RenderVocalLineResult>;
+
+  /**
+   * Speech voices installed on this machine. The roster is the OPERATING
+   * SYSTEM's, so it differs between macOS and Windows and between machines —
+   * enumerate at runtime and never hardcode a list.
+   * @since SDK 3.4.0
+   */
+  listSystemVoices?(): Promise<PluginSystemVoice[]>;
+
+  // --- Downloadable vocal models (@since SDK 3.6.0) --------------------------
+
+  /**
+   * Catalogue of downloadable third-party voice models with live install
+   * state. Optional — probe with `typeof`. Voices of installed models appear
+   * in `listSystemVoices` automatically; the system voices remain the default.
+   */
+  listVocalModels?(): Promise<VocalModelStatusInfo[]>;
+
+  /** Download+verify+install a model; resolves when done. Poll listVocalModels for progress. */
+  installVocalModel?(modelId: string): Promise<void>;
+
+  /** Remove an installed model. Configs referencing it fall back to the system default. */
+  uninstallVocalModel?(modelId: string): Promise<void>;
 
   // --- Plugin/Synth Operations ---
 
@@ -1897,6 +1946,55 @@ export interface PluginHost {
   /** Delete a secret from the OS keychain (plugin-scoped). */
   deleteSecret(key: string): Promise<void>;
 
+  // --- Credential Management (SDK 3.7.0, capability-gated via network.allowedHosts) ---
+  //
+  // Generic BYO-credential surface for third-party integrations (Freesound,
+  // …): per-provider credential profiles (API keys, client id/secret) plus a
+  // host-run OAuth2 authorization-code flow (system browser + local loopback
+  // callback). Everything persists under the plugin's own encrypted secrets;
+  // refresh_token and client_secret never cross to the renderer — plugins get
+  // only the short-lived access token, to pass as a header to the
+  // equally-gated httpRequest/downloadFile. All methods optional:
+  // feature-probe before use.
+
+  /** Store (replace) a provider credential profile, e.g. { api_key, client_id, client_secret }. @since 3.7.0 */
+  credentialSetProfile?(providerId: string, fields: Record<string, string>): Promise<void>;
+
+  /** Read a provider credential profile (null when unset). @since 3.7.0 */
+  credentialGetProfile?(providerId: string): Promise<Record<string, string> | null>;
+
+  /** Delete a provider's profile AND its OAuth tokens. @since 3.7.0 */
+  credentialDeleteProfile?(providerId: string): Promise<void>;
+
+  /** Connection state for a provider — drives the panel's connect card. @since 3.7.0 */
+  credentialGetStatus?(providerId: string): Promise<PluginCredentialStatus>;
+
+  /**
+   * Run the OAuth2 authorization-code flow: opens the system browser, catches
+   * the redirect on a local loopback port (parsed from `redirectUri`),
+   * exchanges the code, and persists the tokens plugin-scoped. Resolves when
+   * the flow settles (success, cancel, timeout, error). @since 3.7.0
+   */
+  oauth2Authorize?(req: PluginOAuth2AuthorizeRequest): Promise<PluginCredentialStatus>;
+
+  /**
+   * Complete a pending authorization with a manually pasted code (providers
+   * whose credential registers an out-of-band redirect that displays the code
+   * instead of calling our loopback). Requires an in-flight oauth2Authorize.
+   * @since 3.7.0
+   */
+  oauth2CompleteWithCode?(providerId: string, code: string): Promise<PluginCredentialStatus>;
+
+  /**
+   * The provider access token, transparently refreshed near expiry. Null when
+   * no tokens exist or refresh failed (re-check credentialGetStatus).
+   * @since 3.7.0
+   */
+  oauth2GetAccessToken?(providerId: string): Promise<string | null>;
+
+  /** Drop OAuth tokens (back to 'key-only'); the profile survives. @since 3.7.0 */
+  oauth2Disconnect?(providerId: string): Promise<void>;
+
   // --- Sample Library (Phase 2) ---
 
   /** Query the sample library with optional filters. */
@@ -2621,6 +2719,105 @@ export interface ExportTrackAudioResult {
 }
 
 /** @since SDK 1.2.0 */
+// --- Vocal rendering (@since SDK 3.4.0) -------------------------------------
+
+/** One syllable: what to say, at what pitch, when, and in whose voice. */
+export interface VocalSyllableSpec {
+  /** The syllable to speak. Spoken in isolation, so coarticulation is lost. */
+  text: string;
+  /** Target MIDI note. The speaker's own intonation is discarded entirely. */
+  midi: number;
+  /** Start position in seconds, relative to the start of the rendered line. */
+  startSec: number;
+  /** How long the syllable occupies. Only the vowel nucleus is stretched. */
+  durSec: number;
+  /**
+   * Spectral-envelope warp: >1 shrinks the apparent head (child, insect),
+   * <1 enlarges it (ogre, oracle). Legal range 0.25-4. Default 1.
+   */
+  formantWarp?: number;
+  /** 0-1, lerps aperiodicity toward fully noisy — breath. Default 0. */
+  breath?: number;
+  /** Semitones of seeded F0 random-walk. Legal range 0-12. Default 0. */
+  jitter?: number;
+  /**
+   * Pitch treatment (@since SDK 3.5.0) — Krims' flow taxonomy as a knob:
+   * 'lock' sung (default) · 'natural' spoken, the analyzed contour kept and
+   * only transposed · 'contour' between: the contour's SHAPE survives,
+   * recentered on the note.
+   */
+  pitchMode?: 'lock' | 'natural' | 'contour';
+  /** contour only: 0 = lock, 1 = full speech contour. Default 1. */
+  contourDepth?: number;
+  /** natural only: semitones the kept contour is shifted by. Default 0. */
+  transposeSemitones?: number;
+  /**
+   * 'fill' stretches the vowel nucleus to the slot (sung, default);
+   * 'natural' keeps the spoken rate placed at the slot onset (rap diction —
+   * filling stair-steps a speech contour into a slow glide).
+   */
+  timeMode?: 'fill' | 'natural';
+  /**
+   * Per-syllable accent, 0-4, applied after the edge fades. Relative WITHIN a
+   * lane only — each rendered lane is peak-normalized, so lane loudness must
+   * ride setTrackVolume instead.
+   */
+  gain?: number;
+  /** Play the fragment reversed — an exhale becomes a credible inhale. */
+  reverse?: boolean;
+  /** 'inhale' renders the raw fragment as breath: no analysis, no pitch. */
+  kind?: 'syllable' | 'inhale';
+}
+
+export interface RenderVocalLineRequest {
+  syllables: VocalSyllableSpec[];
+  /** System voice name; the host picks a sensible default when omitted. */
+  ttsVoice?: string;
+  /** Total length of the rendered file in seconds. */
+  durationSec: number;
+}
+
+export interface RenderVocalLineResult {
+  /** Absolute path to the rendered WAV, ready for `writeAudioClip`. */
+  filePath: string;
+  durationSec: number;
+  /**
+   * Indices of syllables that carried no pitch. A speech voice that is almost
+   * entirely unvoiced (macOS "Whisper") reports every syllable here: it renders
+   * as breath rather than melody. Surfaced so callers can say so rather than
+   * leaving the user wondering why a lane is tuneless.
+   */
+  unvoicedIndices: number[];
+}
+
+// --- Downloadable vocal models (@since SDK 3.6.0) ---------------------------
+
+export interface VocalModelVoiceInfo {
+  /** Voice id for `ttsVoice` configs: 'piper:en_US-lessac-medium', 'kokoro:af_bella'. */
+  id: string;
+  label: string;
+}
+
+export interface VocalModelStatusInfo {
+  id: string;
+  label: string;
+  family: 'piper' | 'kokoro';
+  sizeMB: number;
+  license: string;
+  state: 'not_installed' | 'downloading' | 'installed' | 'error';
+  /** 0-100 while downloading — poll listVocalModels for live progress. */
+  progressPct?: number;
+  error?: string;
+  voices: VocalModelVoiceInfo[];
+}
+
+export interface PluginSystemVoice {
+  /** Name to pass back as `ttsVoice` (e.g. 'Zarvox', 'Microsoft David'). */
+  name: string;
+  /** BCP-47-ish locale when the OS reports one. */
+  locale?: string;
+}
+
 export interface ProcessAudioResult {
   outputPath: string;
 }
@@ -3340,6 +3537,8 @@ export interface PluginDownloadOptions {
   headers?: Record<string, string>;
   /** Overwrite if file exists (default: false) */
   overwrite?: boolean;
+  /** Timeout in milliseconds (default: 120000 — original-quality audio is big) */
+  timeoutMs?: number;
 }
 
 // ============================================================================
@@ -3360,6 +3559,48 @@ export interface PluginHttpResponse {
   statusText: string;
   headers: Record<string, string>;
   body: string;
+}
+
+// ============================================================================
+// Credential Management Types (SDK 3.7.0)
+// ============================================================================
+
+export type PluginCredentialState =
+  | 'unconfigured' // no profile stored
+  | 'key-only'     // profile stored, no OAuth tokens
+  | 'authorizing'  // browser flow in flight
+  | 'connected'    // tokens present (valid or refreshable)
+  | 'expired';     // tokens present but expired/refresh-failed
+
+export interface PluginCredentialStatus {
+  state: PluginCredentialState;
+  /** Which profile FIELD NAMES exist (never values) — renders "API key saved". */
+  profileFields: string[];
+  /** Access-token expiry (epoch ms) when the provider reported one. */
+  expiresAt?: number;
+  /** While 'authorizing': the browser URL, for a "copy login link" fallback. */
+  authorizeUrl?: string;
+  error?: string;
+}
+
+export interface PluginOAuth2AuthorizeRequest {
+  /** Plugin-chosen provider id, e.g. 'freesound'. Namespaces the stored secrets. */
+  providerId: string;
+  /** Provider authorize endpoint. Hostname must be in network.allowedHosts. */
+  authorizeUrl: string;
+  /** Provider token endpoint. Hostname must be in network.allowedHosts. */
+  tokenUrl: string;
+  /** Profile field holding the OAuth client id (default 'client_id'). */
+  clientIdField?: string;
+  /** Profile field holding the OAuth client secret (default 'client_secret'). */
+  clientSecretField?: string;
+  /** http://localhost:<port>/<path> or 127.0.0.1 — the port is parsed from here. */
+  redirectUri: string;
+  scopes?: string[];
+  /** Extra query params for the authorize URL (provider quirks). */
+  extraAuthParams?: Record<string, string>;
+  /** Flow timeout in ms (default 300000). */
+  timeoutMs?: number;
 }
 
 // ============================================================================

@@ -274,17 +274,35 @@ export function TrackRow({
   }, []);
 
   // Freeze state lives HERE (the row never unmounts while its drawer does) —
-  // shared by the ❄ badge below and the drawer's Freeze tab (@since 2.47.0).
+  // shared by the ❄ button below and the drawer's Freeze tab (@since 2.47.0).
   // Inert on hosts without the freeze surface.
   const freeze = useTrackFreeze(externalFxHost, track.id);
-  const freezeBadge =
-    freeze.state?.frozen === true
-      ? freeze.state.missingDeps.length > 0
+
+  // ❄ is a TOGGLE, not an ornament (@since 3.3.0). It renders on every
+  // freezable track — live ones included, dimmed — so freezing is one click
+  // from the row instead of three through the drawer. Deliberately NO
+  // confirmation: freeze is fully reversible (unfreeze restores the chain,
+  // and the stem is kept for an instant re-freeze), so a modal would only
+  // tax the common case. `state === null` means the host has no freeze
+  // surface, or the read was refused (sample/audio rows) — nothing renders.
+  // `freezable === false` is the host saying "this track can never freeze"
+  // (transition scenes); older hosts omit the field and keep the old
+  // always-offer behaviour.
+  const freezeState = freeze.state;
+  const showFreeze = freeze.enabled && !!freezeState && freezeState.freezable !== false;
+  const freezeBadge = !freezeState
+    ? null
+    : freezeState.frozen
+      ? freezeState.missingDeps.length > 0
         ? ('missing' as const)
-        : freeze.state.stale
+        : freezeState.stale
           ? ('stale' as const)
           : ('frozen' as const)
-      : null;
+      : ('live' as const);
+  // Unfreeze REBUILDS the plugin chain, so it cannot run while the plugins it
+  // recorded are provably missing — the only state where the toggle is inert.
+  const freezeBlocked = freezeBadge === 'missing';
+  const freezeBusy = freeze.busy !== null;
 
   // "Needs generation" = has prompt, no MIDI yet, not currently generating
   const needsGeneration = !!(prompt?.trim() && !hasMidi && !isGenerating);
@@ -545,24 +563,44 @@ export function TrackRow({
                 → All
               </button>
             )}
-            {freezeBadge && (
-              <span
+            {showFreeze && freezeBadge && (
+              <button
                 data-testid="sdk-track-freeze-badge"
-                className={`px-1 py-0.5 text-xs leading-none rounded-sm self-center ${
-                  freezeBadge === 'frozen'
-                    ? 'text-sas-accent'
-                    : 'text-amber-400'
+                disabled={freezeBusy || freezeBlocked || isGenerating}
+                onClick={() => {
+                  void (freezeState?.frozen ? freeze.unfreeze() : freeze.freeze());
+                }}
+                className={`px-1 py-0.5 text-xs leading-none rounded-sm self-center transition-colors ${
+                  freezeBusy
+                    ? 'text-sas-muted/40 cursor-wait animate-pulse'
+                    : freeze.error
+                      ? 'text-red-400'
+                      : freezeBadge === 'frozen'
+                        ? 'text-sas-accent hover:bg-sas-accent/10'
+                        : freezeBadge === 'live'
+                          ? 'text-sas-muted/50 hover:text-sas-accent hover:bg-sas-accent/10'
+                          : freezeBlocked
+                            ? 'text-amber-400 cursor-not-allowed'
+                            : 'text-amber-400 hover:bg-amber-400/10'
                 }`}
                 title={
-                  freezeBadge === 'frozen'
-                    ? 'Frozen — playing the rendered stem (mixer stays live)'
-                    : freezeBadge === 'stale'
-                      ? 'Frozen (stale) — sound edited since the stem rendered; re-freeze in the drawer'
-                      : `Frozen — plugin(s) missing on this machine: ${freeze.state?.missingDeps.map((d) => d.name).join(', ')}`
+                  freezeBusy
+                    ? freeze.busy === 'freeze'
+                      ? 'Rendering stem… (playback stops while it renders)'
+                      : 'Unfreezing…'
+                    : freeze.error
+                      ? `Freeze failed: ${freeze.error} (click to retry)`
+                      : freezeBadge === 'frozen'
+                        ? 'Frozen — playing the rendered stem (mixer stays live). Click to unfreeze.'
+                        : freezeBadge === 'stale'
+                          ? 'Frozen (stale) — sound edited since the stem rendered. Click to unfreeze, or re-freeze from the drawer.'
+                          : freezeBadge === 'missing'
+                            ? `Frozen — cannot unfreeze: plugin(s) missing on this machine: ${freezeState?.missingDeps.map((d) => d.name).join(', ')}`
+                            : 'Freeze track — renders its sound to a stem so it costs no CPU (playback stops while it renders)'
                 }
               >
-                {freezeBadge === 'frozen' ? '❄' : freezeBadge === 'stale' ? '⚠❄' : '❄!'}
-              </span>
+                {freezeBadge === 'stale' ? '⚠❄' : freezeBadge === 'missing' ? '❄!' : '❄'}
+              </button>
             )}
             {onToggleFxDrawer && (
               <button

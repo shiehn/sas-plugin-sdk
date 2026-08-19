@@ -4,6 +4,60 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.7.0 — BYO credentials: generic credential management + OAuth2
+
+Third-party integrations (first consumer: the Freesound panel) need per-user
+credentials — an API key the user pastes, plus an OAuth2 "Connect" for the
+endpoints that demand it. That machinery is now host-provided and generic, so
+the next integration reuses it instead of reinventing browser dances.
+
+- **New optional `PluginHost` methods** (feature-probe before use):
+  `credentialSetProfile` / `credentialGetProfile` / `credentialDeleteProfile` /
+  `credentialGetStatus`, and `oauth2Authorize` / `oauth2CompleteWithCode` (OOB
+  manual-code fallback) / `oauth2GetAccessToken` (transparent single-flight
+  refresh) / `oauth2Disconnect`. New types `PluginCredentialState`,
+  `PluginCredentialStatus`, `PluginOAuth2AuthorizeRequest`.
+- Profiles + tokens persist under the plugin's own encrypted secrets;
+  `refresh_token` and `client_secret` never cross to the renderer — plugins
+  get only the short-lived access token, passed as a header to the
+  equally-gated `httpRequest`/`downloadFile`.
+- OAuth endpoints are gated by the same manifest
+  `capabilities.network.allowedHosts` as every other egress path.
+- **`downloadFile` hardened + made real**: now honors `headers`, `overwrite`
+  and the new `timeoutMs` option (previously accepted-and-ignored), gates by
+  `allowedHosts` (it was the one ungated egress path), rejects `..`/absolute
+  filenames, and creates subdirectories (`previews/1.mp3` works now).
+
+(Contract versions 3.4–3.6 were host-side additions — vocal rendering, freeze
+`freezable`, text2voice — that shipped without a standalone SDK release; the
+package version re-converges with the contract here.)
+
+## 3.3.0 — The row's ❄ is a button
+
+Freezing a track was a three-click dive (`▾` → Freeze tab → button) even though
+the row already showed a ❄ telling you the state. The badge is now the control.
+
+- **`TrackRow`**: the ❄ is a `<button>` that toggles — frozen → unfreeze, live →
+  freeze — with **no confirmation dialog** (freeze is reversible and the stem is
+  kept for an instant re-freeze, so a modal only taxed the common case). It now
+  renders on LIVE tracks too, dimmed; previously it appeared only once frozen,
+  so the row could show freeze state but never enter it. Inert while a render is
+  in flight, while the row is generating, and while the recorded plugins are
+  provably missing (unfreeze cannot rebuild that chain). The drawer's Freeze tab
+  is unchanged — it still owns re-freeze, force-re-render, and dep detail.
+  Same `data-testid="sdk-track-freeze-badge"`; glyphs ❄ / ⚠❄ / ❄! are unchanged.
+- **NEW `TrackFreezeState.freezable?: boolean`** — false when a track can never
+  freeze however it is edited (today: tracks in a transition scene, whose live
+  volume-automation fades would bake into the stem and then apply twice). The
+  row hides the toggle rather than offering a button certain to fail. Optional:
+  hosts that omit it keep the always-offer behaviour.
+- **`useTrackFreeze`**: single-track freeze/unfreeze now dispatches
+  `sas:freeze-changed` (with `detail.trackId`) on success, so the scene and
+  project ❄ rollups follow a row's toggle — previously only batch operations
+  broadcast, and a per-track freeze left those counts stale. The hook skips its
+  own echo. Failures now also go through `host.showToast`, since a one-click
+  toggle has nowhere else to report a refusal.
+
 ## 3.1.0 — The track drawer stops hiding its options
 
 Selecting a drawer tab now shows what that tab is for. The FX tab used to open

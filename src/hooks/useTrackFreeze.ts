@@ -53,14 +53,20 @@ export function useTrackFreeze(host: PluginHost | undefined, trackId: string): U
   // Scene-level and Freeze-All batches change freeze state OUTSIDE this
   // row — the workstation dispatches 'sas:freeze-changed' when a batch
   // completes so every mounted badge/tab refetches (@since SDK 2.47.1).
+  // Single-track actions dispatch it too (see `run`), which is how the scene
+  // and project ❄ rollups follow a row's toggle; `detail.trackId` lets the
+  // hook that just acted skip its own echo — it already holds the state the
+  // action returned, and refetching it would only race that value.
   useEffect(() => {
     if (!enabled) return undefined;
-    const onFreezeChanged = (): void => {
+    const onFreezeChanged = (e: Event): void => {
+      const originator = (e as CustomEvent<{ trackId?: string } | undefined>).detail?.trackId;
+      if (originator === trackId) return;
       void refresh();
     };
     window.addEventListener('sas:freeze-changed', onFreezeChanged);
     return () => window.removeEventListener('sas:freeze-changed', onFreezeChanged);
-  }, [enabled, refresh]);
+  }, [enabled, refresh, trackId]);
 
   const run = useCallback(
     async (action: 'freeze' | 'unfreeze', force?: boolean): Promise<void> => {
@@ -75,8 +81,21 @@ export function useTrackFreeze(host: PluginHost | undefined, trackId: string): U
             ? await host.freezeTrack!.call(host, trackId, { force: true })
             : await method.call(host, trackId)
         );
+        // The scene ❄ count and the project rollup are derived from this
+        // track's row, so they are wrong the moment it changes. Same event
+        // the batch handlers use — one contract, every listener.
+        window.dispatchEvent(new CustomEvent('sas:freeze-changed', { detail: { trackId } }));
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        const message = e instanceof Error ? e.message : String(e);
+        setError(message);
+        // The row's ❄ toggle is one click with no dialog, so a failure has no
+        // other place to land — the drawer (which renders `error` inline) may
+        // not even be open. Toast it: main's refusals name the remedy.
+        host.showToast?.(
+          'error',
+          action === 'freeze' ? 'Freeze Failed' : 'Unfreeze Failed',
+          message
+        );
         void refresh();
       } finally {
         setBusy(null);
