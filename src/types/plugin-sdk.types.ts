@@ -2754,9 +2754,11 @@ export interface VocalSyllableSpec {
   /**
    * 'fill' stretches the vowel nucleus to the slot (sung, default);
    * 'natural' keeps the spoken rate placed at the slot onset (rap diction —
-   * filling stair-steps a speech contour into a slow glide).
+   * filling stair-steps a speech contour into a slow glide); 'vowel' is fill
+   * whose deep compression keeps onset consonants and drops the tail instead
+   * of chipmunking uniformly (@since SDK 3.8.0).
    */
-  timeMode?: 'fill' | 'natural';
+  timeMode?: 'fill' | 'natural' | 'vowel';
   /**
    * Per-syllable accent, 0-4, applied after the edge fades. Relative WITHIN a
    * lane only — each rendered lane is peak-normalized, so lane loudness must
@@ -2767,6 +2769,61 @@ export interface VocalSyllableSpec {
   reverse?: boolean;
   /** 'inhale' renders the raw fragment as breath: no analysis, no pitch. */
   kind?: 'syllable' | 'inhale';
+  // --- Expression engine (@since SDK 3.8.0, vox spec v3) ---------------------
+  /**
+   * Pitch approach time-constant in ms. 0 (default) is the hard autotune
+   * lock; ~60 is a natural singer; small values are the T-Pain dial.
+   */
+  retuneMs?: number;
+  /** Onset approach from this many cents below — phrase-entry scoops. */
+  scoopCents?: number;
+  /** How long the scoop takes to settle. Default 120. */
+  scoopMs?: number;
+  /**
+   * Glide in from this previous note (legato). Senders set it when the gap to
+   * the previous syllable on the lane is small; omit for a fresh entrance.
+   */
+  legatoFromMidi?: number;
+  /** Slow seeded intonation wander in cents — human pitch instability. */
+  driftCents?: number;
+  /**
+   * Vibrato. Onsets LATE into sustained notes (real singers do), with a
+   * loudness wobble coupled to the pitch wobble via ampDepth.
+   */
+  vibrato?: {
+    rateHz?: number;
+    depthCents?: number;
+    onsetMs?: number;
+    riseMs?: number;
+    ampDepth?: number;
+    phaseDeg?: number;
+  };
+  /** Loudness shape over the syllable: swell in, fall away, or punch. */
+  envelope?: 'none' | 'swell' | 'fall' | 'accent';
+  /** Time-varying breathiness [start, end] — breathy onsets, aspirated tails. */
+  breathiness?: [number, number];
+  /**
+   * Melisma: several pitch targets inside ONE syllable's vowel (gospel runs).
+   * durSec shares are normalized across the slot; retuneMs glides the steps.
+   */
+  pitches?: Array<{ midi: number; durSec: number }>;
+  /**
+   * 'nucleus' places the VOWEL on the beat and lets onset consonants lean in
+   * early — singers align vowels to the grid, not consonant starts.
+   */
+  align?: 'start' | 'nucleus';
+  /** Trained-singer resonance (~2.9 kHz), 0..1 — applied to voiced frames. */
+  singersFormant?: number;
+  /** Spectral brightness tilt, -1..1 (±6 dB/oct about 1 kHz, clamped). */
+  tilt?: number;
+  /**
+   * Whole word this syllable belongs to plus a per-instance id. Consecutive
+   * syllables sharing a wordId are synthesized as ONE utterance and sliced at
+   * f0 gaps, so within-word coarticulation survives instead of sounding
+   * spelled out.
+   */
+  word?: string;
+  wordId?: number;
 }
 
 export interface RenderVocalLineRequest {
@@ -2775,6 +2832,17 @@ export interface RenderVocalLineRequest {
   ttsVoice?: string;
   /** Total length of the rendered file in seconds. */
   durationSec: number;
+  /**
+   * Per-lane decorrelation (@since SDK 3.8.0): seeded pitch/timing/vibrato
+   * offsets. Give each lane of a unison group a different seed and the clones
+   * become a choir; identical seeds render bit-identically.
+   */
+  humanize?: {
+    seed?: number;
+    pitchCents?: number;
+    timingMs?: number;
+    vibratoJitter?: number;
+  };
 }
 
 export interface RenderVocalLineResult {

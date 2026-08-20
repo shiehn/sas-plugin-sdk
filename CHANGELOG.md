@@ -4,6 +4,28 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.8.0 — The expression engine: voices that sing, not beep
+
+`renderVocalLine` gains vox spec v3 — everything a throat does that a
+synthesizer doesn't. All fields optional; a v2-shaped request renders
+bit-identically to before.
+
+- **Per-syllable** (`VocalSyllableSpec`): `retuneMs` (the autotune↔natural
+  dial — 0 stays the hard lock), `scoopCents`/`scoopMs` (phrase-entry
+  approach from below), `legatoFromMidi` (glide in from the previous note),
+  `driftCents` (seeded intonation wander), `vibrato` (late-onset, with
+  `ampDepth` coupling a loudness wobble to the pitch wobble), `envelope`
+  (`swell`/`fall`/`accent`), `breathiness: [start, end]` (breathy onsets,
+  aspirated tails), `pitches[]` (melisma — several notes in one vowel),
+  `align: 'nucleus'` (the VOWEL lands on the beat; consonants lean in
+  early), `timeMode: 'vowel'` (deep compression keeps onset consonants and
+  drops the tail), and `word`/`wordId` (consecutive syllables of one word
+  are synthesized as ONE utterance and f0-gap-sliced, so within-word
+  coarticulation survives).
+- **Per-request**: `humanize` — seeded pitch/timing/vibrato-phase offsets
+  per lane. Different seeds turn unison clones into a choir; identical
+  seeds render bit-identically.
+
 ## 3.7.0 — BYO credentials: generic credential management + OAuth2
 
 Third-party integrations (first consumer: the Freesound panel) need per-user
