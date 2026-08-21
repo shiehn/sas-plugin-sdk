@@ -37,6 +37,14 @@ export interface UseRegenerateGuardOptions {
   detail?: string;
   /** data-testid prefix for the dialog. */
   testIdPrefix?: string;
+  /**
+   * Override the dialog title (@since SDK 3.9.0). The default speaks of MIDI
+   * and piano-roll edits, which is wrong for panels whose artifact is
+   * something else — an audio reading, a rendered texture.
+   */
+  title?: string;
+  /** Override the dialog body (@since SDK 3.9.0). `detail` still appends. */
+  message?: React.ReactNode;
 }
 
 export interface RegenerateGuard {
@@ -54,6 +62,8 @@ export function useRegenerateGuard({
   subject,
   detail,
   testIdPrefix = 'regenerate-confirm',
+  title,
+  message,
 }: UseRegenerateGuardOptions): RegenerateGuard {
   const [open, setOpen] = useState(false);
 
@@ -72,11 +82,15 @@ export function useRegenerateGuard({
   const dialog = (
     <ConfirmDialog
       open={open}
-      title="Replace existing MIDI?"
+      title={title ?? 'Replace existing MIDI?'}
       message={
         <>
-          <span className="text-sas-text">{label}</span> already has MIDI. Generating again
-          replaces it — the current pattern and any piano-roll edits are lost.
+          {message ?? (
+            <>
+              <span className="text-sas-text">{label}</span> already has MIDI. Generating
+              again replaces it — the current pattern and any piano-roll edits are lost.
+            </>
+          )}
           {detail ? <> {detail}</> : null}
         </>
       }

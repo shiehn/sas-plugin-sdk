@@ -4,6 +4,14 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.9.0 — The regenerate warning tells the truth
+
+`useRegenerateGuard` gains optional `title` and `message` overrides. The
+default dialog speaks of MIDI and piano-roll edits — wrong, and misleading,
+for panels whose artifact is something else entirely (Text2Voice's audio
+reading was warning "Replace existing MIDI?" on a pure voice re-render).
+Defaults unchanged; existing callers render identically.
+
 ## 3.8.0 — The expression engine: voices that sing, not beep
 
 `renderVocalLine` gains vox spec v3 — everything a throat does that a
