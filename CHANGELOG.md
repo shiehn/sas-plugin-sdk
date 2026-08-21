@@ -4,6 +4,21 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.10.0 — Alt-track UNITS: alternatives that are more than one track
+
+`groupTrackAlternatives` now accepts unit arrays —
+`host.groupTrackAlternatives([[kickFill, tomFill], snareFill])` — where an
+inner array is a UNIT: tracks that sound TOGETHER as one alternative (every
+member shares one `altGroupOrder`; loop-a rotation steps between DISTINCT
+orders and unmutes the whole active unit). Built for drum fills: a
+multi-sound fill is one unit, the groove stays ungrouped, and exactly one
+fill plays per loop pass. `removeTrackAlternative(trackId, { unit: true })`
+removes the track's whole unit in one call. Flat string arrays behave
+exactly as before (each id = a 1-track unit), and a group now dissolves when
+a single DISTINCT ORDER remains (identical to the old singleton rule for
+unique-order groups). Renders/bakes capture the whole lowest-order unit;
+the arranger manifest carries shared orders unchanged.
+
 ## 3.9.0 — The regenerate warning tells the truth
 
 `useRegenerateGuard` gains optional `title` and `message` overrides. The

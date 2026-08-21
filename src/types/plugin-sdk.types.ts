@@ -760,26 +760,35 @@ export interface PluginHost {
    * round-robin — one member per loop cycle — and the arranger receives the
    * grouping to stagger members across the arrangement for variety.
    *
-   * Pass ≥2 engine track ids ({@link PluginTrackHandle.id}). When no input is
-   * grouped yet, a fresh group is created in the given order. When the inputs
-   * include members of exactly ONE existing group, ungrouped inputs join that
-   * group (appended to its order). Inputs spanning two existing groups are
-   * rejected with VALIDATION_ERROR — ungroup first.
+   * Pass ≥2 members. Each member is an engine track id
+   * ({@link PluginTrackHandle.id}) — a 1-track alternative — or an ARRAY of
+   * engine track ids forming a UNIT: tracks that sound TOGETHER as one
+   * alternative (the kick + tom layers of one drum fill; every track in a
+   * unit gets the same `altGroupOrder`, and rotation steps between distinct
+   * orders). When no input is grouped yet, a fresh group is created in the
+   * given order (needs ≥2 units). When the inputs include members of exactly
+   * ONE existing group, all-new units join that group (appended to its
+   * order) and a unit mixing new tracks with existing members of one order
+   * GROWS that unit. Inputs spanning two existing groups, a unit spanning
+   * two orders, or a track appearing in two units are rejected with
+   * VALIDATION_ERROR.
    *
    * v1 scope: all members must belong to this plugin (same-panel groups).
    * Membership lands on the track rows (`altGroupId`/`altGroupOrder` on
    * {@link PluginTrackHandle}) — refresh via {@link getPluginTracks}.
-   * @since SDK 2.66.0
+   * @since SDK 2.66.0 (flat form) / 3.10.0 (unit form)
    */
-  groupTrackAlternatives?(trackIds: readonly string[]): Promise<void>;
+  groupTrackAlternatives?(members: ReadonlyArray<string | readonly string[]>): Promise<void>;
 
   /**
-   * Remove one owned track from its alt group. If a single member remains
-   * afterwards the group dissolves (a singleton is not a group). No-op when
-   * the track is not grouped.
+   * Remove one owned track from its alt group — or, with `{ unit: true }`,
+   * the track's WHOLE unit (every member sharing its `altGroupOrder`; how a
+   * drum fill leaves the rotation as one piece; SDK 3.10.0). If a single
+   * distinct order remains afterwards the group dissolves (one unit is not a
+   * group — nothing rotates). No-op when the track is not grouped.
    * @since SDK 2.66.0
    */
-  removeTrackAlternative?(trackId: string): Promise<void>;
+  removeTrackAlternative?(trackId: string, options?: { unit?: boolean }): Promise<void>;
 
   /**
    * Pin/unpin an alt group: while pinned, round-robin rotation holds the
@@ -2419,7 +2428,8 @@ export interface PluginTrackHandle {
    * null/absent when not grouped. Grouped tracks are interchangeable
    * ALTERNATIVES — never played simultaneously; the host round-robins one
    * member per loop cycle and the arranger staggers members across the
-   * arrangement. See {@link PluginHost.groupTrackAlternatives}.
+   * arrangement. Members sharing an order form a UNIT that sounds together
+   * (SDK 3.10.0). See {@link PluginHost.groupTrackAlternatives}.
    * @since SDK 2.66.0
    */
   altGroupId?: string | null;
