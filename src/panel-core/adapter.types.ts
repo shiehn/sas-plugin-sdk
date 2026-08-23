@@ -33,6 +33,7 @@ import type { TrackLevelsHandle } from '../hooks/useTrackLevels';
 import type { SDKTrackRowProps } from '../components/TrackRow';
 import type { DrawerTab } from '../components/TrackDrawer';
 import type { GeneratorTrackState } from './track-state';
+import type { GenerationStep } from './generation-progress';
 import type { GroupParseSpec, ResolvedTrackGroup, TrackGroupMeta } from './group-meta';
 import type { LLMNoteResponse } from './panel-helpers';
 
@@ -252,6 +253,15 @@ export interface GenerationServices {
    * @since SDK 2.48.0
    */
   sound?: PanelSoundAdapter;
+  /**
+   * Report the current step of THIS generation turn — drives the prompted
+   * row's progress overlay (dynamic label + optional honest bar floor). Bound
+   * by the core to the generating track and spliced in per turn; absent in
+   * hand-built test services and in services built for non-generation
+   * consumers (group renderers, broadcasts). Strategies must call it as
+   * `services.reportStep?.(...)`. @since SDK 3.11.0
+   */
+  reportStep?(step: GenerationStep): void;
 }
 
 /**

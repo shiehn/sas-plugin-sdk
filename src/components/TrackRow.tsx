@@ -24,6 +24,7 @@ import { VolumeSlider } from './VolumeSlider';
 import { PanSlider } from './PanSlider';
 import { SorceryProgressBar } from './SorceryProgressBar';
 import { promptEnterToGenerate } from '../panel-core/panel-helpers';
+import { stepStatusText, type GenerationStep } from '../panel-core/generation-progress';
 
 // ============================================================================
 // Props
@@ -57,6 +58,8 @@ export interface SDKTrackRowProps {
   hasMidi?: boolean;
   /** Progress % (for persistence across scene switches) */
   generationProgress?: number;
+  /** Live generation step (dynamic label + honest bar floor). @since SDK 3.11.0 */
+  generationStep?: GenerationStep | null;
   /** For progress bar pacing */
   estimatedGenerationMs?: number;
   /** Prompt edit (optional — omit to hide prompt input) */
@@ -197,6 +200,7 @@ export function TrackRow({
   error,
   hasMidi = false,
   generationProgress = 0,
+  generationStep = null,
   estimatedGenerationMs = 15000,
   onPromptChange,
   onGenerate,
@@ -369,7 +373,8 @@ export function TrackRow({
           >
             <SorceryProgressBar
               isLoading={true}
-              statusText="CONJURING MIDI..."
+              statusText={stepStatusText(generationStep) ?? 'CONJURING MIDI...'}
+              minProgress={generationStep?.percentFloor}
               heightClass="h-full"
               initialProgress={generationProgress}
               onProgressChange={onProgressChange}

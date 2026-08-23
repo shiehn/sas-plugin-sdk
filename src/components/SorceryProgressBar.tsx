@@ -38,6 +38,13 @@ interface SorceryProgressBarProps {
   onProgressChange?: (progress: number) => void;
   /** Estimated total duration in ms - enables time-aware pacing */
   estimatedDurationMs?: number;
+  /**
+   * Honest floor (0–95) reported by the real pipeline: the bar renders at
+   * least this value while loading, with the time-eased curve animating
+   * between floor lifts. The bar stays monotonic — a lower value later does
+   * nothing. Read via ref so mid-flight changes never restart the timers.
+   */
+  minProgress?: number;
 }
 
 /**
@@ -115,6 +122,7 @@ export function SorceryProgressBar({
   initialProgress = 0,
   onProgressChange,
   estimatedDurationMs,
+  minProgress,
 }: SorceryProgressBarProps): React.ReactElement | null {
   const [progress, setProgress] = useState<number>(initialProgress);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,6 +142,8 @@ export function SorceryProgressBar({
   initialProgressRef.current = initialProgress;
   const estimatedDurationMsRef = useRef(estimatedDurationMs);
   estimatedDurationMsRef.current = estimatedDurationMs;
+  const minProgressRef = useRef(minProgress);
+  minProgressRef.current = minProgress;
 
   // Effect to handle loading state changes - ONLY depends on isLoading
   useEffect(() => {
@@ -160,8 +170,9 @@ export function SorceryProgressBar({
 
             // Add subtle jitter for organic feel (±0.5%)
             const jitter = (Math.random() - 0.5) * 1.0;
-            // Move toward target, ensure monotonically increasing, cap at 95%
-            const next = Math.min(Math.max(target + jitter, prev + 0.05), 95);
+            // Move toward target, ensure monotonically increasing, honor the
+            // reported honest floor, cap at 95%
+            const next = Math.min(Math.max(target + jitter, prev + 0.05, minProgressRef.current ?? 0), 95);
 
             onProgressChangeRef.current?.(next);
             timerRef.current = setTimeout(tick, TIME_BASED_TICK_MIN + Math.random() * TIME_BASED_TICK_RANGE);
@@ -179,7 +190,7 @@ export function SorceryProgressBar({
               return 95;
             }
 
-            const next = Math.min(calculateNextProgress(prev), 95);
+            const next = Math.min(Math.max(calculateNextProgress(prev), minProgressRef.current ?? 0), 95);
             onProgressChangeRef.current?.(next);
 
             const interval = calculateNextTickInterval(next);

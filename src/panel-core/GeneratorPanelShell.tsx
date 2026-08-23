@@ -343,6 +343,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
         error: track.error,
         hasMidi: track.hasMidi,
         generationProgress: track.generationProgress,
+        generationStep: track.generationStep,
         estimatedGenerationMs: identity.estimatedGenerationMs,
         onPromptChange: (prompt: string) => handlers.promptChange(id, prompt),
         onGenerate: () => handlers.generate(id),

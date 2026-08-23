@@ -4,6 +4,32 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.11.0 — Granular generation progress (dynamic step labels + honest bar floors)
+
+Panel generations now report real per-stage progress instead of a static
+"CONJURING MIDI..." over a fully synthetic bar.
+
+- New `panel-core/generation-progress.ts`: `GenerationStep {stage, label,
+  done?, total?, percentFloor?}`, `stepStatusText()`, `GENERATION_STARTED_STEP`,
+  and `runGenerationTurn()` — the core-owned lifecycle runner (emits the
+  started step before the strategy, forwards every report, null-clears in a
+  `finally`; modeled on `runLinkedBroadcast`).
+- `GenerationServices.reportStep?(step)` (optional): strategies call
+  `services.reportStep?.({stage, label, done, total, percentFloor})` at stage
+  boundaries; the core binds it to the prompted track.
+- `GeneratorTrackState.generationStep` (transient, never persisted) drives
+  `TrackRow`'s overlay: dynamic `statusText` ("CHOOSING SOUNDS (3/6)") and the
+  new `SorceryProgressBar` `minProgress` prop — an honest floor the time-eased
+  bar can never fall below (bar stays monotonic; floors clamp to 95).
+- `handleGenerate` now has a `finally` that clears `isGenerating` +
+  `generationStep` — a throwing strategy can no longer leave a stuck row.
+  Every panel-core panel gets the started/cleared lifecycle for free even with
+  an un-instrumented strategy (byte-identical visuals until it reports).
+- `PLUGIN_SDK_VERSION` constant re-synced with the npm version (was stale at
+  3.9.0 since the 3.10.0 release).
+- `host.setProgress` / `host.setStatusMessage` marked `@deprecated` (dead
+  surface: no listener / never rendered); `reportStep` supersedes them.
+
 ## 3.10.0 — Alt-track UNITS: alternatives that are more than one track
 
 `groupTrackAlternatives` now accepts unit arrays —

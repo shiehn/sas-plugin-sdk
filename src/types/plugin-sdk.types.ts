@@ -1916,10 +1916,19 @@ export interface PluginHost {
   /** Show a toast notification to the user. */
   showToast(type: 'info' | 'success' | 'warning' | 'error', title: string, message?: string): void;
 
-  /** Set progress indicator on a specific track. -1 to hide. */
+  /**
+   * Set progress indicator on a specific track. -1 to hide.
+   * @deprecated Never wired to any UI (the `plugin:progress` channel has no
+   * listener). Panel generation progress is renderer-local since SDK 3.11.0 —
+   * use `GenerationServices.reportStep` from a panel-core generation strategy.
+   */
   setProgress(trackId: string, progress: number): void;
 
-  /** Set a global status message in the plugin's accordion header. */
+  /**
+   * Set a global status message in the plugin's accordion header.
+   * @deprecated Never rendered anywhere (write-only host field). Use
+   * `GenerationServices.reportStep` (per-row step labels) or `showToast`.
+   */
   setStatusMessage(message: string | null): void;
 
   /** Request user confirmation via a modal dialog. */

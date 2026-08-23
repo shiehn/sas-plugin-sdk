@@ -35,6 +35,7 @@ import type { DrawerTab } from '../components/TrackDrawer';
 import { type GeneratorTrackState, newTrackState } from './track-state';
 import { generationBlockedBy, trackDataKey } from './panel-helpers';
 import { runLinkedBroadcast, type GroupBroadcastProgress } from './linked-broadcast';
+import { runGenerationTurn } from './generation-progress';
 import { panelClipEndSeconds, panelQuarterNotesPerBar } from './meter';
 import {
   parseTrackGroups,
@@ -1366,12 +1367,23 @@ export function useGeneratorPanelCore({
 
       setTracks((prev) =>
         prev.map((t) =>
-          t.handle.id === trackId ? { ...t, isGenerating: true, error: null, generationProgress: 0 } : t,
+          t.handle.id === trackId
+            ? { ...t, isGenerating: true, error: null, generationProgress: 0, generationStep: null }
+            : t,
         ),
       );
 
       try {
-        await adapter.generation.generate(track, makeServices());
+        // runGenerationTurn emits the started step, forwards every strategy
+        // report into this track's generationStep, and null-clears in its
+        // finally — a throwing strategy cannot leave a stale label.
+        await runGenerationTurn({
+          onStep: (step) =>
+            setTracks((prev) =>
+              prev.map((t) => (t.handle.id === trackId ? { ...t, generationStep: step } : t)),
+            ),
+          run: (reportStep) => adapter.generation.generate(track, { ...makeServices(), reportStep }),
+        });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : 'Generation failed';
         setTracks((prev) =>
@@ -1380,6 +1392,15 @@ export function useGeneratorPanelCore({
           ),
         );
         host.showToast('error', 'Generation failed', msg);
+      } finally {
+        // Safety net alongside the strategies' own success patches (which
+        // carry hasMidi/editNotes/etc.) — double-clearing is idempotent, and
+        // no path can leave a stuck "generating" row.
+        setTracks((prev) =>
+          prev.map((t) =>
+            t.handle.id === trackId ? { ...t, isGenerating: false, generationStep: null } : t,
+          ),
+        );
       }
     },
     [host, adapter, tracks, isAuthenticated, makeServices],

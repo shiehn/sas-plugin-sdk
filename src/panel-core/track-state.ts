@@ -13,6 +13,7 @@ import type {
   PluginMidiNote,
 } from '../types/plugin-sdk.types';
 import type { DrawerTab } from '../components/TrackDrawer';
+import type { GenerationStep } from './generation-progress';
 
 /** Internal track state combining handle + runtime state + prompt. */
 export interface GeneratorTrackState {
@@ -28,6 +29,13 @@ export interface GeneratorTrackState {
   error: string | null;
   hasMidi: boolean;
   generationProgress: number;
+  /**
+   * Live step of the in-flight generation turn (label + optional counts /
+   * bar floor), or null when idle. Transient render state: set by the core's
+   * generation wrapper, never persisted, and rebuilt-to-null by loadTracks —
+   * a scene switch can never show a stale label. @since SDK 3.11.0
+   */
+  generationStep: GenerationStep | null;
   // Piano-roll edit state. `editNotes` is the live, editable copy of the
   // track's MIDI (loaded lazily when the Edit tab is first opened, or seeded
   // from a fresh generation). `editBars`/`editBpm` size the grid + the save
@@ -72,6 +80,7 @@ export function newTrackState(
     error: null,
     hasMidi: false,
     generationProgress: 0,
+    generationStep: null,
     editNotes: [],
     editBars: 4,
     editBpm: 120,
