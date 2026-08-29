@@ -73,6 +73,11 @@ export interface SDKTrackRowProps {
   /** Delete track. Optional — omit to hide the delete button (e.g. a composite
    *  like CrossfadeTrackRow owns a single delete for the whole pair). */
   onDelete?: () => void;
+  /** Copy for the delete confirmation. Supply it when `onDelete` removes MORE
+   *  than this one row (a group anchor whose ✕ takes its members with it) so
+   *  the dialog says what actually goes. Omit for the stock single-track text.
+   *  @since SDK 3.12.0 */
+  deleteConfirm?: { title?: string; message?: React.ReactNode };
   /** Custom content replacing the prompt input (e.g., sample info display) */
   contentSlot?: React.ReactNode;
   /** Toggle mute */
@@ -207,6 +212,7 @@ export function TrackRow({
   onShuffle,
   onCopy,
   onDelete,
+  deleteConfirm,
   contentSlot,
   onMuteToggle,
   onSoloToggle,
@@ -715,12 +721,14 @@ export function TrackRow({
 
       <ConfirmDialog
         open={confirmDelete}
-        title="Delete track?"
+        title={deleteConfirm?.title ?? 'Delete track?'}
         message={
-          <>
-            <span className="text-sas-text">{track.name?.trim() || 'This track'}</span> will be
-            permanently removed from this scene. This cannot be undone.
-          </>
+          deleteConfirm?.message ?? (
+            <>
+              <span className="text-sas-text">{track.name?.trim() || 'This track'}</span> will be
+              permanently removed from this scene. This cannot be undone.
+            </>
+          )
         }
         confirmLabel="Delete"
         onConfirm={() => {

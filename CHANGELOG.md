@@ -4,6 +4,18 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.12.0 — `TrackRow.deleteConfirm` (honest delete copy for group anchors)
+
+- `SDKTrackRowProps.deleteConfirm?: { title?, message? }` — optional copy for
+  the row's delete confirmation. A composite row whose ✕ removes MORE than the
+  row itself (a group anchor that takes its members with it) passes what
+  actually goes; omitted, the dialog keeps its stock single-track text.
+  Additive — every existing caller renders byte-identically.
+- Motivating bug: the Text2Voice lead voice's ✕ opened "Delete track?" and
+  then silently did nothing (the anchor guard returned before deleting) — a
+  dead affordance. The plugin now routes the anchor's ✕ through the whole
+  reading's delete with a "Delete reading?" dialog.
+
 ## 3.11.0 — Granular generation progress (dynamic step labels + honest bar floors)
 
 Panel generations now report real per-stage progress instead of a static
