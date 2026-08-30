@@ -36,6 +36,7 @@ import { type GeneratorTrackState, newTrackState } from './track-state';
 import { generationBlockedBy, trackDataKey } from './panel-helpers';
 import { runLinkedBroadcast, type GroupBroadcastProgress } from './linked-broadcast';
 import { runGenerationTurn } from './generation-progress';
+import { copyTrackFxBestEffort } from './fx-copy';
 import { panelClipEndSeconds, panelQuarterNotesPerBar } from './meter';
 import {
   parseTrackGroups,
@@ -655,10 +656,11 @@ export function useGeneratorPanelCore({
 
   // --- Port track (cross-panel import) -----------------------------------
   // Pull a MIDI part out of a track owned by ANOTHER panel in THIS scene and
-  // play it on a fresh family instrument. The core copies MIDI + role and
-  // hands the sound step to `applyPortedTrackSound` along with the SOURCE
-  // selector — whether the source's patch travels with the part is the
-  // family's call, not the core's (see PortedTrackSource).
+  // play it on a fresh family instrument. The core copies MIDI + role + the
+  // source's FX chain (external inserts, best-effort) and hands the sound
+  // step to `applyPortedTrackSound` along with the SOURCE selector — whether
+  // the source's PATCH travels with the part is the family's call, not the
+  // core's (see PortedTrackSource).
   const handlePortTrack = useCallback(
     async (sel: { sourceTrackDbId: string; trackName: string; role?: string }): Promise<void> => {
       if (!activeSceneId) {
@@ -705,6 +707,11 @@ export function useGeneratorPanelCore({
           trackDbId: sel.sourceTrackDbId,
           trackName: sel.trackName,
         });
+        // The source's FX chain travels with the part too — external inserts
+        // rebuilt with their states. Best-effort: a third-party plugin missing
+        // from this machine warns instead of failing the port; hosts without
+        // copyTrackFxFrom (pre-2.41) no-op.
+        await copyTrackFxBestEffort(host, handle.id, sel.sourceTrackDbId);
         // Same stamping hook as Add Track (loadTracks below resolves metas).
         if (adapter.onTrackCreated) {
           try {

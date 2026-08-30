@@ -2548,7 +2548,21 @@ export type SynthStateType = 'raw' | 'valuetree';
 export type TrackSoundSnapshot =
   | { kind: 'sample'; samplePath: string; label: string }
   | { kind: 'instrument'; displayName: string; instrumentId: string | null; zones: InstrumentZone[]; label: string }
-  | { kind: 'preset'; state: string; label: string; stateType?: SynthStateType };
+  | {
+      kind: 'preset';
+      state: string;
+      label: string;
+      stateType?: SynthStateType;
+      /**
+       * Identity of the CUSTOM instrument the state belongs to (absent ⇒
+       * default Surge XT). `pluginId` is the scan-catalog id (the picker's
+       * `InstrumentDescriptor.pluginId`) — a product id for loading a FRESH
+       * instance, never a reference to the source track's plugin instance.
+       * Lets an apply side re-home a `raw` blob by loading the same plugin
+       * first (`setTrackInstrument`) instead of refusing it. @since SDK 3.13.0
+       */
+      instrument?: { pluginId: string; name: string };
+    };
 
 /** Options for `PluginHost.listImportableTracks`. @since SDK 2.13.0 */
 export interface ListImportableTracksOptions {

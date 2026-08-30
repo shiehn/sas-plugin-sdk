@@ -4,6 +4,27 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.13.0 — Cross-panel ports carry the source's FX chain
+
+- `panel-core/fx-copy.ts`: `copyTrackFxBestEffort()` — the best-effort
+  external-insert copy (missing third-party plugins warn, never fail; older
+  hosts no-op) extracted from useTransitionOps' local helper; transition
+  layers and cross-panel ports now share one behavior.
+- `handlePortTrack` (Import → "This scene — other panels") copies the SOURCE
+  track's FX chain onto the newborn right after the family sound step — a
+  synth part ported into bass now arrives with MIDI + patch (when it travels,
+  see the family's `applyPortedTrackSound`) + FX instead of landing dry.
+  Uses `host.copyTrackFxFrom` (@since 2.41.0) — no new host surface.
+- `TrackSoundSnapshot` preset variant gains optional `instrument?: {pluginId,
+  name}` — which CUSTOM instrument a `raw` state belongs to (absent = default
+  Surge XT); the host populates it from `tracks.instrument_plugin_id`. The
+  bass port path uses it to DEEP-COPY third-party sounds: load a fresh
+  instance of the same plugin (`setTrackInstrument` with the catalog id),
+  apply the copied state blob, persist it as the newborn's own preset — no
+  reference back to the source track or its plugin instance. Plugin missing
+  on this machine / legacy identity-less blob still falls back to a fresh
+  bass preset.
+
 ## 3.12.0 — `TrackRow.deleteConfirm` (honest delete copy for group anchors)
 
 - `SDKTrackRowProps.deleteConfirm?: { title?, message? }` — optional copy for

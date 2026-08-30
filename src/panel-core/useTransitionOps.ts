@@ -29,6 +29,7 @@ import {
   type CrossfadePairMeta,
 } from '../crossfade-meta';
 import { buildCrossfadeInpaintPrompt } from '../crossfade-inpaint';
+import { copyTrackFxBestEffort } from './fx-copy';
 import {
   asFadeMeta,
   buildFadeVolumeCurve,
@@ -167,26 +168,14 @@ export function useTransitionOps({
 
   // --- FX copy (best-effort) ---------------------------------------------
   // Layer tracks are created fresh, so the instrument copy alone lands
-  // bone-dry — copy the source's FULL FX chain (built-in categories +
-  // external inserts) too. Best-effort by design: a third-party plugin
-  // missing from this machine must not fail the create (it surfaces as a
-  // warning toast instead). Feature-gated for pre-2.41 hosts. Deliberately
-  // NOT part of the drift re-sync — that re-pushes sound identity only.
+  // bone-dry — copy the source's FX chain too. The mechanics (feature gate,
+  // missing-plugin warning toast, swallow-on-error) live in the shared
+  // panel-core helper, which the cross-panel port path uses as well.
+  // Deliberately NOT part of the drift re-sync — that re-pushes sound
+  // identity only.
   const copyTrackFx = useCallback(
     async (newTrackId: string, sourceDbId: string): Promise<void> => {
-      if (typeof host.copyTrackFxFrom !== 'function') return;
-      try {
-        const res = await host.copyTrackFxFrom(newTrackId, sourceDbId);
-        if (res.externalMissing.length > 0) {
-          host.showToast(
-            'warning',
-            'Some FX not copied',
-            `Missing plugin(s): ${res.externalMissing.join(', ')}`,
-          );
-        }
-      } catch {
-        /* best-effort — the layer still works, just drier */
-      }
+      await copyTrackFxBestEffort(host, newTrackId, sourceDbId);
     },
     [host],
   );
