@@ -4,6 +4,61 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.15.0 — automateExternalApp (capability-gated desktop automation)
+
+- One optional `PluginHost` method, `automateExternalApp(request)`, drives
+  ANOTHER desktop application through the OS accessibility layer — read its
+  front window title, activate it, click a native menu item by path, or send
+  a keystroke (command / shift / option / control modifiers). Four actions on
+  one discriminated `ExternalAppRequest`; the answer is always an
+  `ExternalAppResult` (`ok`, `platform`, `title?`, `enabled?`, `reason?`,
+  `detail?`) — automation failures never throw, read `ok` + `reason`.
+- The gate: manifest `capabilities.externalApps: string[]` — the process
+  names the plugin may drive. `request.app` must match one EXACTLY or the
+  host answers `capability-denied` without touching the OS. No wildcards, no
+  default: a plugin that declares nothing can drive nothing.
+- macOS only in this release (System Events via `osascript`); other
+  platforms answer `unsupported-platform`. Remaining `reason`s:
+  `accessibility-denied` (the host app is not enabled under System Settings →
+  Privacy & Security → Accessibility — `detail` says so), `app-not-running`,
+  `not-found` (menu path), `error` (osascript's stderr in `detail`).
+  `menuClick` reads the item's `enabled` state first and does NOT click a
+  disabled item — the result is `{ ok: true, enabled: false }`.
+- Every string that reaches the AppleScript (process name, menu titles, key)
+  is emitted as an escaped literal, so a plugin cannot inject script.
+- First consumer: the Synthesizer V panel — save the editor's project before
+  (re)opening it, and trigger the re-bounce export without the user touching
+  the editor.
+- Probe with `typeof host.automateExternalApp === 'function'` and degrade on
+  older hosts. New exported types: `ExternalAppPlatform`,
+  `ExternalAppRequest`, `ExternalAppResult`.
+
+## 3.14.0 — Plugin data-directory files (writePluginFile / listPluginFiles / openExternalPath)
+
+- Three optional `PluginHost` methods, all sandboxed to the plugin's own
+  `getDataDirectory()`, so a panel that hands files to an EXTERNAL
+  application needs no back door — the Synthesizer V panel (writes a project
+  file, opens it in the editor) is the first consumer:
+  - `writePluginFile(relativePath, contents, { overwrite? })` — write a
+    string / `Uint8Array` at a data-dir-relative path (subdirectories created
+    as needed); returns the absolute path. Same path rule as `downloadFile`
+    (no absolute paths, no `..` segments → `VALIDATION_ERROR`). Overwrites by
+    default; `{ overwrite: false }` refuses an existing file.
+  - `listPluginFiles(relativeDir)` — non-recursive listing as
+    `PluginFileEntry[]` (`name`, absolute `path`, forward-slash
+    `relativePath`, `size`, `mtimeMs`, `isDirectory`). `''` / `'.'` is the
+    data dir itself; a missing directory returns `[]`, not an error.
+  - `openExternalPath(absolutePath)` — open a path INSIDE the data dir with
+    the OS default application (Electron `shell.openPath`). Outside the data
+    dir → `VALIDATION_ERROR`; absent → `FILE_NOT_FOUND`; OS-reported failure
+    → `ENGINE_ERROR`.
+- Containment is a real resolved-path check against the data dir, not only
+  the textual `..` rule, so an absolute path elsewhere on disk is refused
+  even when it carries no traversal segments.
+- All three are `method?(…)` — probe with
+  `typeof host.writePluginFile === 'function'` and degrade on older hosts.
+  New exported types: `PluginFileEntry`, `PluginWriteFileOptions`.
+
 ## 3.13.0 — Cross-panel ports carry the source's FX chain
 
 - `panel-core/fx-copy.ts`: `copyTrackFxBestEffort()` — the best-effort

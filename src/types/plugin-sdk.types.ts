@@ -1948,6 +1948,59 @@ export interface PluginHost {
   /** Copy a file into the plugin's data directory. */
   importFile(sourcePath: string, destFilename: string): Promise<string>;
 
+  // --- Plugin data-directory files (@since SDK 3.14.0) ---
+  //
+  // Everything below is sandboxed to the plugin's own `getDataDirectory()`,
+  // so a panel that hands files to an EXTERNAL application (the Synthesizer V
+  // panel writes a project file and opens it in the editor) needs no back
+  // door. All three are optional — probe with
+  // `typeof host.writePluginFile === 'function'` and degrade on older hosts.
+
+  /**
+   * Write a file INSIDE the plugin's data directory (`getDataDirectory()`).
+   * `relativePath` is data-dir-relative, may include subdirectories (created
+   * as needed), and must not be absolute or contain `..` segments —
+   * VALIDATION_ERROR otherwise (same rule as downloadFile). Returns the
+   * absolute path written. Overwrites by default; `{ overwrite: false }` throws
+   * VALIDATION_ERROR when the file exists.
+   * @since SDK 3.14.0
+   */
+  writePluginFile?(relativePath: string, contents: string | Uint8Array, options?: PluginWriteFileOptions): Promise<string>;
+
+  /**
+   * List the entries of a directory INSIDE the plugin's data directory.
+   * `relativeDir` follows writePluginFile's rules ('' or '.' = the data dir
+   * itself). A missing directory returns [] (not an error). Non-recursive.
+   * @since SDK 3.14.0
+   */
+  listPluginFiles?(relativeDir: string): Promise<PluginFileEntry[]>;
+
+  /**
+   * Open a path with the operating system's default application
+   * (Electron `shell.openPath`). The path must resolve INSIDE the plugin's data
+   * directory — VALIDATION_ERROR otherwise; FILE_NOT_FOUND when absent;
+   * ENGINE_ERROR when the OS reports a failure (shell.openPath resolves to a
+   * non-empty error string in that case).
+   * @since SDK 3.14.0
+   */
+  openExternalPath?(absolutePath: string): Promise<void>;
+
+  // --- External desktop automation (@since SDK 3.15.0, capability-gated) ---
+
+  /**
+   * Drive another desktop application through the operating system's
+   * accessibility layer: read its window title, activate it, click a native
+   * menu item, or send a keystroke. Gated by the manifest capability
+   * `capabilities.externalApps` — a list of process names the plugin may drive
+   * (`app` must be one of them exactly, else `capability-denied`). macOS only in
+   * this release (System Events via osascript); other platforms return
+   * `unsupported-platform`. Never throws for automation failures: read `ok` and
+   * `reason`. Throws only on capability denial being impossible to express
+   * (never) — i.e. always resolves.
+   * @since SDK 3.15.0
+   */
+  automateExternalApp?(request: ExternalAppRequest): Promise<ExternalAppResult>;
+
   // --- Network (Phase 2, capability-gated) ---
 
   /** Make an HTTP request. Requires 'network' capability with allowedHosts. */
@@ -3535,6 +3588,13 @@ export interface PluginCapabilities {
    * @since SDK 2.64.0
    */
   crossTrackAutomation?: boolean;
+  /**
+   * Process names this plugin may drive via `automateExternalApp` (exact
+   * match against `ExternalAppRequest.app`, e.g. ['Synthesizer V Studio 2
+   * Pro']). Absent or empty = no desktop automation at all.
+   * @since SDK 3.15.0
+   */
+  externalApps?: string[];
 }
 
 // ============================================================================
@@ -3640,6 +3700,57 @@ export interface PluginDownloadOptions {
   overwrite?: boolean;
   /** Timeout in milliseconds (default: 120000 — original-quality audio is big) */
   timeoutMs?: number;
+}
+
+/** Options for `PluginHost.writePluginFile`. @since SDK 3.14.0 */
+export interface PluginWriteFileOptions {
+  /** Replace an existing file. Default true. */
+  overwrite?: boolean;
+}
+
+/** A file inside the plugin's data directory. @since SDK 3.14.0 */
+export interface PluginFileEntry {
+  /** Base name. */
+  name: string;
+  /** Absolute path. */
+  path: string;
+  /** Path relative to the plugin's data directory (forward slashes). */
+  relativePath: string;
+  size: number;
+  mtimeMs: number;
+  isDirectory: boolean;
+}
+
+/** Which platform automation ran on. @since SDK 3.15.0 */
+export type ExternalAppPlatform = 'darwin' | 'win32' | 'linux';
+
+/**
+ * One desktop-automation request for `PluginHost.automateExternalApp`. `app`
+ * is the target's process name and must appear in the manifest's
+ * `capabilities.externalApps`. @since SDK 3.15.0
+ */
+export type ExternalAppRequest =
+  /** The title of the app's front window ('' when it has none). */
+  | { app: string; action: 'windowTitle' }
+  /** Bring the app to the front. */
+  | { app: string; action: 'activate' }
+  /** Click a native menu item by path, e.g. ['File','Save'] or ['File','Export','Export and Overwrite']. Reports `enabled`; a disabled item is NOT clicked. */
+  | { app: string; action: 'menuClick'; menuPath: string[] }
+  /** Send a keystroke to the app (it is activated first). `key` is a single character or a key name ('return','escape','space','tab'); modifiers as listed. */
+  | { app: string; action: 'keystroke'; key: string; modifiers?: Array<'command' | 'shift' | 'option' | 'control'> };
+
+/** Outcome of `PluginHost.automateExternalApp`. @since SDK 3.15.0 */
+export interface ExternalAppResult {
+  ok: boolean;
+  platform: ExternalAppPlatform;
+  /** windowTitle: the title. */
+  title?: string;
+  /** menuClick: whether the item was enabled (and therefore clicked). */
+  enabled?: boolean;
+  /** When !ok: 'unsupported-platform' | 'capability-denied' | 'accessibility-denied' | 'app-not-running' | 'not-found' | 'error'. */
+  reason?: string;
+  /** Human-readable detail for the reason. */
+  detail?: string;
 }
 
 // ============================================================================
