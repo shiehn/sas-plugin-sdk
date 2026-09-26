@@ -92,3 +92,46 @@ export function newTrackState(
     ...overrides,
   };
 }
+
+/**
+ * Merge a freshly loaded track list with the previous in-memory one, keyed by
+ * the stable DB UUID. `loadTracks` rebuilds every row from engine/DB state
+ * (`newTrackState` → `editNotes: []`, `drawerOpen: false`), so two kinds of
+ * purely in-memory state must ride across the reload for tracks that survive:
+ *
+ * - the piano-roll edit buffer (`editNotes/editBars/editBpm/editBeatsPerBar`) —
+ *   `editLoadStartedRef` is a permanent "loaded once" latch, so wiping the
+ *   buffer would leave the Edit tab empty while the MIDI sits safe in the
+ *   engine + DB;
+ * - the drawer's view state (`drawerOpen/drawerTab/editorStage`) — a reload is
+ *   a DATA refresh, not a UI reset. Any agent mutation (e.g. an ephemeral
+ *   `scene_set_loop_range` from the chat agent) fires `onAfterAgentMutation`
+ *   → reload; the user's open piano roll must not slam shut.
+ *
+ * Everything else (runtime state, hasMidi, instrument, progress) comes fresh
+ * from `next`. Tracks absent from `prev` (new, or a scene switch that emptied
+ * `prev`) are returned as loaded. Pure; row order follows `next`.
+ *
+ * @since SDK 3.16.0
+ */
+export function carryTrackViewState(
+  prev: readonly GeneratorTrackState[],
+  next: readonly GeneratorTrackState[],
+): GeneratorTrackState[] {
+  const prevByDbId = new Map<string, GeneratorTrackState>(prev.map((p) => [p.handle.dbId, p]));
+  return next.map((ts): GeneratorTrackState => {
+    const carry = prevByDbId.get(ts.handle.dbId);
+    return carry
+      ? {
+          ...ts,
+          editNotes: carry.editNotes,
+          editBars: carry.editBars,
+          editBpm: carry.editBpm,
+          editBeatsPerBar: carry.editBeatsPerBar,
+          drawerOpen: carry.drawerOpen,
+          drawerTab: carry.drawerTab,
+          editorStage: carry.editorStage,
+        }
+      : ts;
+  });
+}

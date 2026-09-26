@@ -32,7 +32,7 @@ import { useTrackLevels, type TrackLevelsHandle } from '../hooks/useTrackLevels'
 import { parseCrossfadePairs, type CrossfadePairMeta } from '../crossfade-meta';
 import { parseFades, splitFadeEntries, type FadeEntry } from '../fade-meta';
 import type { DrawerTab } from '../components/TrackDrawer';
-import { type GeneratorTrackState, newTrackState } from './track-state';
+import { type GeneratorTrackState, newTrackState, carryTrackViewState } from './track-state';
 import { generationBlockedBy, trackDataKey } from './panel-helpers';
 import { runLinkedBroadcast, type GroupBroadcastProgress } from './linked-broadcast';
 import { runGenerationTurn } from './generation-progress';
@@ -423,25 +423,10 @@ export function useGeneratorPanelCore({
           );
         }
         if (isStale()) return;
-        // Carry forward the in-memory piano-roll edit buffer for tracks that
-        // still exist, matched by stable DB UUID — a reload fired after a
-        // generation must not wipe seeded notes while editLoadStartedRef still
-        // marks the track loaded.
-        setTracks((prev) => {
-          const prevByDbId = new Map(prev.map((p) => [p.handle.dbId, p]));
-          return trackStates.map((ts) => {
-            const carry = prevByDbId.get(ts.handle.dbId);
-            return carry
-              ? {
-                  ...ts,
-                  editNotes: carry.editNotes,
-                  editBars: carry.editBars,
-                  editBpm: carry.editBpm,
-                  editBeatsPerBar: carry.editBeatsPerBar,
-                }
-              : ts;
-          });
-        });
+        // Carry forward the in-memory piano-roll edit buffer AND the drawer's
+        // view state for tracks that still exist (see carryTrackViewState):
+        // a reload is a data refresh, not a UI reset.
+        setTracks((prev) => carryTrackViewState(prev, trackStates));
         // Restore persisted history so it survives reopen.
         for (const ts of trackStates) {
           const persisted = sceneData[trackDataKey(ts.handle.dbId, 'soundHistory')];

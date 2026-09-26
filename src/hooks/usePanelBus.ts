@@ -11,6 +11,13 @@
  * `getPanelBusState` host-side also (re)realizes the bus (adopt-by-marker)
  * and routes not-yet-routed panel tracks, so calling `reload()` from the
  * panel's track-reload path keeps everything converged with zero extra wiring.
+ *
+ * Recovery (S-019, SDK 3.18.0): a read that fails (or returns nothing) keeps
+ * the last state and heals itself. It re-reads on the host's engine-ready
+ * signal (`onEngineReady`, fired when a project finishes loading, the same
+ * signal that re-adopts the panel's tracks) and on a bounded backoff (1 s,
+ * 2 s, 4 s, 8 s, 15 s, then quiet). A slow project load used to leave the
+ * strip hidden until the next scene change. See `recovering-read.ts`.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -23,6 +30,13 @@ import type {
   PanelBusState,
   PluginHost,
 } from '../types/plugin-sdk.types';
+import { createRecoveringRead, type RecoveringRead } from './recovering-read';
+
+/** A recovering reader bound to the scene it was created for. */
+interface SceneReader {
+  sceneId: string;
+  reader: RecoveringRead;
+}
 
 /** Legacy bus meter poll cadence — pre-2.70 hosts only. 2.70+ hosts push
  *  levels via `onPanelBusLevels` (engine-batched, change-suppressed) and
@@ -108,12 +122,13 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
   const [fxLoading, setFxLoading] = useState(false);
   const [fxPickerOpen, setFxPickerOpen] = useState(false);
   const fxLoadedRef = useRef(false);
-  // Stale-scene guard: a slow read for the PREVIOUS scene must not clobber
-  // the current scene's state (same shape as the panels' loadTracks guard).
-  const loadSeqRef = useRef(0);
-  const sidechainSeqRef = useRef(0);
+  // One recovering reader per surface, created per (host, scene) and disposed
+  // on scene change / unmount. Disposal is the stale-scene guard: a slow read
+  // for the PREVIOUS scene can never clobber the current scene's state.
+  const busReaderRef = useRef<SceneReader | null>(null);
+  const sidechainReaderRef = useRef<SceneReader | null>(null);
+  const motionReaderRef = useRef<SceneReader | null>(null);
   const sidechainDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const motionSeqRef = useRef(0);
   const motionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reload = useCallback(async (): Promise<void> => {
@@ -121,14 +136,8 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
       setBus(null);
       return;
     }
-    const seq = ++loadSeqRef.current;
-    try {
-      const state = await host.getPanelBusState(activeSceneId);
-      if (loadSeqRef.current === seq) setBus(state);
-    } catch {
-      // Host hiccup (project switching, engine restart) — keep prior state;
-      // the next scene-change or mutation reload converges.
-    }
+    const current = busReaderRef.current;
+    if (current && current.sceneId === activeSceneId) await current.reader.read();
   }, [host, activeSceneId, supported]);
 
   const reloadSidechain = useCallback(async (): Promise<void> => {
@@ -136,14 +145,8 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
       setSidechain(null);
       return;
     }
-    const seq = ++sidechainSeqRef.current;
-    try {
-      const state = await host.getPanelBusSidechain(activeSceneId);
-      if (sidechainSeqRef.current === seq) setSidechain(state);
-    } catch {
-      // Cheap blob read — a hiccup just leaves the prior state; the next
-      // scene change or knob touch converges.
-    }
+    const current = sidechainReaderRef.current;
+    if (current && current.sceneId === activeSceneId) await current.reader.read();
   }, [host, activeSceneId, sidechainSupported]);
 
   const reloadMotion = useCallback(async (): Promise<void> => {
@@ -151,14 +154,8 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
       setMotion(null);
       return;
     }
-    const seq = ++motionSeqRef.current;
-    try {
-      const state = await host.getPanelBusMotion(activeSceneId);
-      if (motionSeqRef.current === seq) setMotion(state);
-    } catch {
-      // Cheap blob read — a hiccup just leaves the prior state; the next
-      // scene change or knob touch converges.
-    }
+    const current = motionReaderRef.current;
+    if (current && current.sceneId === activeSceneId) await current.reader.read();
   }, [host, activeSceneId, motionSupported]);
 
   useEffect(() => {
@@ -166,10 +163,85 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
     setFxPickerOpen(false);
     setSidechain(null);
     setMotion(null);
-    void reload();
-    void reloadSidechain();
-    void reloadMotion();
-  }, [reload, reloadSidechain, reloadMotion]);
+    if (!activeSceneId) return;
+    const sceneId = activeSceneId;
+
+    // Errors stay swallowed for the UX (the strip keeps its last state), but
+    // get logged: at most once per panel per scene visit, never per retry.
+    let logged = false;
+    const logOnce =
+      (surface: string) =>
+      (error: unknown): void => {
+        if (logged) return;
+        logged = true;
+        const detail = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[usePanelBus] panel bus ${surface} read failed for scene ${sceneId} (${detail}); ` +
+            'keeping the last state, retrying for up to 30 s and again when the engine reports ready'
+        );
+      };
+
+    const created: Array<{ ref: { current: SceneReader | null }; scoped: SceneReader }> = [];
+    const bind = <T>(
+      ref: { current: SceneReader | null },
+      surface: string,
+      read: () => Promise<T | null | undefined>,
+      onValue: (value: T) => void
+    ): void => {
+      const scoped: SceneReader = {
+        sceneId,
+        reader: createRecoveringRead<T>({ read, onValue, onFailure: logOnce(surface) }),
+      };
+      ref.current = scoped;
+      created.push({ ref, scoped });
+    };
+
+    if (supported && host.getPanelBusState) {
+      bind<PanelBusState>(busReaderRef, 'state', () => host.getPanelBusState!(sceneId), setBus);
+    }
+    if (sidechainSupported && host.getPanelBusSidechain) {
+      bind<PanelBusSidechainState>(
+        sidechainReaderRef,
+        'sidechain',
+        () => host.getPanelBusSidechain!(sceneId),
+        setSidechain
+      );
+    }
+    if (motionSupported && host.getPanelBusMotion) {
+      bind<PanelBusMotionState>(motionReaderRef, 'motion', () => host.getPanelBusMotion!(sceneId), setMotion);
+    }
+    if (created.length === 0) return;
+
+    for (const { scoped } of created) void scoped.reader.read();
+
+    return () => {
+      for (const { ref, scoped } of created) {
+        scoped.reader.dispose();
+        if (ref.current === scoped) ref.current = null;
+      }
+    };
+  }, [host, activeSceneId, supported, sidechainSupported, motionSupported]);
+
+  // Engine ready = a project finished loading (the same signal that re-adopts
+  // the panel's tracks). Re-read even when healthy: a same-project reopen
+  // keeps the scene id but re-realizes the bus. Subscribed once per HOST, not
+  // per scene, and routed to whichever readers are current: the app keys its
+  // main-side listener by (plugin, event), so an unsubscribe here would also
+  // deafen panel-core's track re-adoption until something re-subscribed.
+  // Scene churn (including the null scene mid project switch) must never
+  // unsubscribe.
+  const anySurface = supported || sidechainSupported || motionSupported;
+  useEffect(() => {
+    if (!anySurface || typeof host.onEngineReady !== 'function') return;
+    const maybeUnsubscribe: unknown = host.onEngineReady(() => {
+      busReaderRef.current?.reader.signal();
+      sidechainReaderRef.current?.reader.signal();
+      motionReaderRef.current?.reader.signal();
+    });
+    return () => {
+      if (typeof maybeUnsubscribe === 'function') (maybeUnsubscribe as () => void)();
+    };
+  }, [host, anySurface]);
 
   // Flush guard: never leave a pending debounced amount pointing at a stale
   // scene or an unmounted panel.

@@ -18,7 +18,7 @@ export {
   type ResolvedFade,
   type ResolvedGroupFade,
 } from './useTransitionOps';
-export { type GeneratorTrackState, newTrackState } from './track-state';
+export { type GeneratorTrackState, newTrackState, carryTrackViewState } from './track-state';
 export {
   trackDataKey,
   generationBlockedBy,

@@ -4,6 +4,100 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.18.0 — `importSamples` returns the sample ids it produced; samples carry `importedAt` / `origin`; the panel bus strip recovers after a slow project load
+
+- Bug it unblocks: the loops panel's **Load** button imported the picked files
+  and then had no way to know WHICH library samples they became, so nothing
+  was placed and the user got no feedback. `importSamples` only returned
+  counts.
+- `PluginSampleImportResult.samples?: PluginImportedSample[]` (additive,
+  optional): one entry per file that resolved to a library sample, in input
+  order. `PluginImportedSample = { id, sourcePath, duplicate }` — `id` is the
+  library sample id to hand to `fitSampleToScene` / the add-sample flow,
+  `sourcePath` is the path the caller passed in, and `duplicate` is true when
+  the file's content was already in the library (nothing new stored).
+- `imported` is unchanged: it still counts duplicates. `samples[].duplicate`
+  is how a caller tells new rows from existing ones.
+- Hosts older than 3.18.0 omit `samples`; feature-detect
+  (`result.samples !== undefined`) and fall back to the counts. A plugin that
+  requires the ids should declare `minHostVersion: 3.18.0`.
+- Second gap, same release: a single imported file (e.g. one Splice loop)
+  worked but was hard to find in the library afterwards. `PluginSampleInfo`
+  gains two optional fields so a panel can show a **Recently imported**
+  section, only when something was recently imported:
+  - `importedAt?: string` — ISO-8601 time the sample entered this user's
+    library.
+  - `origin?: 'import' | 'pack'` — `'import'` when the user brought the file in
+    (file dialog, `importSamples`, a tool call, drag and drop); `'pack'` when it
+    arrived with a downloaded sample pack or the factory library.
+- A "Recently imported" view should filter `origin === 'import'` (newest
+  `importedAt` first) so a freshly downloaded pack does not flood it. Both
+  fields are absent on hosts older than 3.18.0: treat a sample without
+  `origin` as unknown, keep it out of the view, and hide the view when nothing
+  qualifies.
+- Bug fix, same release (S-019): after a project reload, many panels showed
+  no scene bus strip (fader, FX chain, Duck, Motion), which read as lost bus
+  FX. Nothing was lost on disk. On a slow load, a panel's first
+  `getPanelBusState` reached the host while the project was still switching
+  and rejected. `usePanelBus` swallowed the error and kept `bus = null`, and
+  it only re-read on a scene change or a bus mutation, so the strip stayed
+  hidden.
+- `usePanelBus` now recovers on its own. Same public API; no host change
+  needed:
+  - It re-reads on `host.onEngineReady` (the engine's `projectLoaded`, the
+    same signal that re-adopts the panel's tracks), once the burst of
+    re-emits settles (500 ms), even when the last read succeeded. A
+    same-project reopen keeps the scene id, so this is also its refresh.
+  - After a failed read it retries on a bounded backoff (1 s, 2 s, 4 s, 8 s,
+    15 s = 30 s, at most six reads), then stays quiet until the next engine
+    ready or scene change. An engine-ready signal restarts the budget.
+  - Recovery reads never overlap: a retry that comes due mid-read is dropped,
+    and a signal that lands mid-read queues one re-read after it. Timers are
+    cancelled and late reads discarded on scene change and unmount.
+  - A failed or empty read keeps the last state instead of clearing it.
+    Errors stay silent in the UI, with at most one `console.warn` per panel
+    per scene visit.
+  - The sidechain and motion reads recover the same way.
+  - The engine-ready subscription lives for the panel's lifetime, not per
+    scene: the app keys that listener per (plugin, event), so unsubscribing
+    on every scene change would also deafen panel-core's track re-adoption.
+
+## 3.17.0 — `LLM_MODEL` role aliases + `thinkingLevel` on `generateWithLLM`
+
+- `LLM_MODEL = { BEST: 'best', LIGHTWEIGHT: 'lightweight' }` (+ `LLMModelRole`).
+  Plugins no longer name a Gemini version: `LLMToolUseRequest.model` takes a
+  role (or, for back-compat, a raw id) and the host resolves it against its
+  single registry (`sas-app/src/shared/config/llm-models.ts`). A Google
+  version bump is now one registry edit; every builtin generator
+  (pad / arp / ensemble / synthv / text2voice / chat) moved onto the roles and
+  declares `minHostVersion: 3.17.0`.
+- `LLMGenerationRequest.thinkingLevel?: 'LOW' | 'HIGH'` — per-call thinking
+  depth for the chat-completion path. Omit for the host policy default
+  (`low`: the 2026-09-04 diagnosis measured Pro's dynamic default at 23–168 s
+  per single MIDI part with 6 of 10 attempts timing out). The tool-use path's
+  `generationConfig.thinkingLevel` is unchanged. Operators can force a level
+  or Google's default for every call with the host env
+  `SAS_GEMINI_THINKING_LEVEL=minimal|low|medium|high|off`.
+
+## 3.16.0 — Drawer view state survives a track reload (`carryTrackViewState`)
+
+- Bug: with the sound drawer open on the Edit tab (piano roll showing), ANY
+  agent mutation — e.g. the chat agent running `scene_set_loop_range` to loop
+  bar 1 of a 16-bar scene — fired `host.onAfterAgentMutation` → the panel's
+  `loadTracks()`, which rebuilt every row from `newTrackState` (`drawerOpen:
+  false`) and carried only the piano-roll edit buffer forward. The drawer
+  slammed shut and the piano roll "disappeared" although the notes were safe.
+  (Dragging the loop markers in the UI never triggered this — that path
+  broadcasts no mutation.)
+- New pure panel-core export `carryTrackViewState(prev, next)`: the
+  `loadTracks` merge, keyed by stable DB UUID. Carries the edit buffer
+  (`editNotes/editBars/editBpm/editBeatsPerBar`) AND the drawer's view state
+  (`drawerOpen/drawerTab/editorStage`) for surviving tracks; everything else
+  (runtime state, hasMidi, instrument, progress) comes fresh. A reload is a
+  data refresh, not a UI reset. Tracks absent from `prev` come back as loaded.
+- The instrument and drum panels (still standalone) apply the same carry in
+  their own `loadTracks`.
+
 ## 3.15.0 — automateExternalApp (capability-gated desktop automation)
 
 - One optional `PluginHost` method, `automateExternalApp(request)`, drives

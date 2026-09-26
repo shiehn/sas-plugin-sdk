@@ -6,6 +6,7 @@
  * All plugin output flows through TracktionEngine (MIDI or audio clips).
  */
 
+import type { LLMModelRole } from '../constants/llm-models';
 import type { ComponentType, ReactNode } from 'react';
 
 // ============================================================================
@@ -2074,7 +2075,18 @@ export interface PluginHost {
   /** Get a single sample by ID. */
   getSampleById(id: string): Promise<PluginSampleInfo | null>;
 
-  /** Import audio files into the sample library. */
+  /**
+   * Import audio files into the sample library.
+   *
+   * `imported` counts every file that resolved to a library sample,
+   * duplicates included (a file whose content is already in the library is
+   * not stored again but still counts; unchanged semantics). Since 3.18.0 the
+   * result also carries `samples`: one {@link PluginImportedSample} per
+   * resolved file, in input order, with its library `id` and a `duplicate`
+   * flag that tells new rows from existing ones. Hosts older than 3.18.0 omit
+   * `samples`, so feature-detect it (`result.samples !== undefined`) before
+   * relying on it.
+   */
   importSamples(filePaths: string[]): Promise<PluginSampleImportResult>;
 
   /** Create a sample track in the active scene. */
@@ -3281,6 +3293,17 @@ export interface LLMGenerationRequest {
    * prefixed automatically).
    */
   skipContextPrefix?: boolean;
+  /**
+   * Thinking depth for the reasoning model behind this call (SDK 3.17.0).
+   *
+   * OMIT for the host's policy default — `'LOW'` for these single-part
+   * generations, because Pro's own default (dynamic/high) was measured
+   * taking 1–15 minutes per MIDI part and timing out 6 of 10 attempts.
+   * Set `'HIGH'` only when the call is a genuinely hard joint problem.
+   * Operators can force a level or Google's default for every call with
+   * the host env `SAS_GEMINI_THINKING_LEVEL` (minimal|low|medium|high|off).
+   */
+  thinkingLevel?: 'LOW' | 'HIGH';
 }
 
 export interface LLMGenerationResult {
@@ -3376,8 +3399,12 @@ export interface LLMSystemInstruction {
 }
 
 export interface LLMToolUseRequest {
-  /** Gemini model id (e.g. 'gemini-2.5-flash'). */
-  model: string;
+  /**
+   * Model ROLE (`LLM_MODEL.BEST` / `LLM_MODEL.LIGHTWEIGHT`, SDK 3.17.0) or a
+   * raw Gemini id. Roles are resolved by the host against its registry;
+   * prefer them so a Google version bump never touches plugin code.
+   */
+  model: LLMModelRole | string;
   /** Conversation so far, including any tool-result turns. */
   contents: LLMContent[];
   /** System prompt as Gemini-native systemInstruction. */
@@ -3837,12 +3864,60 @@ export interface PluginSampleInfo {
   durationSeconds: number | null;
   fileSizeBytes: number | null;
   tags: string[] | null;
+  /**
+   * When this sample entered the user's library, as an ISO-8601 timestamp
+   * (e.g. `'2026-09-26T18:42:07.000Z'`). Parse it with `Date.parse`.
+   *
+   * Absent on hosts older than 3.18.0, so treat a missing value as "unknown",
+   * never as "just now".
+   * @since 3.18.0
+   */
+  importedAt?: string;
+  /**
+   * How this sample entered the library:
+   * - `'import'`: the user brought the file in (the file dialog,
+   *   `importSamples`, a tool call, drag and drop);
+   * - `'pack'`: it arrived with a downloaded sample pack or the factory
+   *   library.
+   *
+   * Absent on hosts older than 3.18.0. A "Recently imported" view should
+   * keep only `origin === 'import'` (newest `importedAt` first) so that a
+   * freshly downloaded pack, which lands hundreds of samples at once, does
+   * not flood it. A sample with no `origin` is unknown: leave it out of that
+   * view, and hide the view when nothing qualifies.
+   * @since 3.18.0
+   */
+  origin?: 'import' | 'pack';
+}
+
+/** One file's outcome from importSamples (SDK 3.18.0+). */
+export interface PluginImportedSample {
+  /** Library sample id — pass to fitSampleToScene / the add-sample flow. */
+  id: string;
+  /** The file path the caller passed in. */
+  sourcePath: string;
+  /** True when the file was already in the library (content match) — nothing new was stored. */
+  duplicate: boolean;
 }
 
 export interface PluginSampleImportResult {
+  /**
+   * Files that resolved to a library sample. Duplicates count here too (a
+   * file already in the library still counts as imported; semantics
+   * unchanged from before 3.18.0). Use `samples[].duplicate` to tell newly
+   * stored samples from existing ones.
+   */
   imported: number;
+  /** Files that did not resolve to a library sample (nothing stored, no id). */
   skipped: number;
+  /** One message per file whose import threw. */
   errors: string[];
+  /**
+   * Per-file results for every file that resolved to a library sample, in
+   * input order. Absent on hosts older than 3.18.0.
+   * @since 3.18.0
+   */
+  samples?: PluginImportedSample[];
 }
 
 /** Sample track with associated sample metadata (returned by getPluginSampleTracks) */

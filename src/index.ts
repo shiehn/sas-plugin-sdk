@@ -122,6 +122,8 @@ export type {
   PluginSampleFilter,
   PluginSampleInfo,
   PluginSampleImportResult,
+  // Per-file importSamples outcome (since SDK 3.18.0)
+  PluginImportedSample,
   PluginSampleTrackInfo,
   PluginAudioTextureRequest,
   PluginAudioTextureResult,
@@ -366,6 +368,9 @@ export {
 // lives in the assistant (src/music-engine/constants/instrument-classification.ts)
 // and is exposed via that accessor.
 export { PLUGIN_SDK_VERSION } from './constants/sdk-version';
+// Model ROLE aliases — plugins never name a Gemini version (SDK 3.17.0).
+export { LLM_MODEL } from './constants/llm-models';
+export type { LLMModelRole } from './constants/llm-models';
 
 // ============================================================================
 // Utils
