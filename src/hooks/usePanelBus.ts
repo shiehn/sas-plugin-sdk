@@ -4,13 +4,19 @@
  *
  * Feature-gated: `supported` is false on hosts without the panel-bus surface
  * (older app builds), and every consumer should render nothing in that case —
- * the strip must never appear on a host that can't back it. Reading state
- * NEVER engages a bus; the first mutation (fader move / FX add) does, host-side.
+ * the strip must never appear on a host that can't back it. Engaging is the
+ * host's call: an explicit mutation (fader move / FX add) engages, and so does
+ * a read in the ACTIVE scene once the panel owns a track there and the user
+ * has not disengaged it (auto-engage, 08-10). A read never disengages.
  *
  * Reload story: state re-reads on scene change and after every mutation.
  * `getPanelBusState` host-side also (re)realizes the bus (adopt-by-marker)
- * and routes not-yet-routed panel tracks, so calling `reload()` from the
- * panel's track-reload path keeps everything converged with zero extra wiring.
+ * and routes not-yet-routed panel tracks into it. A panel therefore calls
+ * `notifyTracksChanged()` whenever its track set changes (after creating a
+ * track, at the end of its track reload): the re-read is what makes a new
+ * track join the bus at once instead of on the next scene change or reopen
+ * (S-027 gap G1, SDK 3.19.0). `GeneratorPanelShell` wires this for every
+ * panel-core panel; a panel that mounts the strip itself calls it.
  *
  * Recovery (S-019, SDK 3.18.0): a read that fails (or returns nothing) keeps
  * the last state and heals itself. It re-reads on the host's engine-ready
@@ -63,7 +69,20 @@ export interface UsePanelBusResult {
   fxPickerOpen: boolean;
   setFxPickerOpen: (open: boolean) => void;
   refreshFx: () => void;
+  /** Read the bus state now (explicit; runs immediately). */
   reload: () => Promise<void>;
+  /**
+   * The panel's track set changed (a track was created, or the panel's
+   * track reload finished). Re-reads the bus state so the host routes new
+   * tracks into the scene bus, and auto-engages a fresh scene's bus, right
+   * away (S-027 gap G1). Coalesced and never overlapping: idle, it reads
+   * now; with a read in flight, it queues ONE re-read after it however many
+   * calls land meanwhile; with an engine-ready re-read settling, that read
+   * covers it. Stable identity (safe in any deps list). No-op on hosts
+   * without the bus surface, and after unmount. Fire-and-forget.
+   * @since SDK 3.19.0
+   */
+  notifyTracksChanged: () => void;
   onVolumeChange: (volumeDb: number) => void;
   onMuteToggle: () => void;
   onSoloToggle: () => void;
@@ -157,6 +176,18 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
     const current = motionReaderRef.current;
     if (current && current.sceneId === activeSceneId) await current.reader.read();
   }, [host, activeSceneId, motionSupported]);
+
+  // S-027 S8 (gap G1): only the STATE read routes tracks and auto-engages, so
+  // only it refreshes; the sidechain and motion reads don't depend on this
+  // panel's membership. Deliberately dependency-free: it pokes whichever
+  // reader is current (scene-scoped, disposed on scene change / unmount), so
+  // a panel can list it in its loadTracks deps without ever re-creating
+  // loadTracks (the stale-dist render loop lesson). A stale-scene call can at
+  // worst cost the current scene one extra, coalesced read; callers already
+  // skip stale track loads.
+  const notifyTracksChanged = useCallback((): void => {
+    busReaderRef.current?.reader.refresh();
+  }, []);
 
   useEffect(() => {
     setBus(null);
@@ -404,6 +435,7 @@ export function usePanelBus(host: PluginHost, activeSceneId: string | null): Use
     setFxPickerOpen: openPicker,
     refreshFx: () => void loadFxList({ rescan: true }),
     reload,
+    notifyTracksChanged,
     onVolumeChange: (volumeDb: number) =>
       mutate(host.setPanelBusVolume && (() => host.setPanelBusVolume!(activeSceneId!, volumeDb))),
     onMuteToggle: () =>

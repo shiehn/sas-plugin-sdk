@@ -4,6 +4,34 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.19.0 — a newly created panel track joins its scene bus at once
+
+- Bug it fixes (S-027 gap G1): the host routes a panel's tracks into its
+  scene bus, and auto-engages a fresh scene's bus, only when the panel READS
+  the bus state. Nothing re-read it after a track was created, so a new track
+  played outside its bus (dry of the bus FX, not under the bus fader), and the
+  first tracks of a fresh scene got no strip, until the user switched scenes
+  or reopened the project.
+- `UsePanelBusResult.notifyTracksChanged(): void` (additive). Call it whenever
+  the panel's track set changes: after creating a track, and at the end of the
+  panel's track reload. It re-reads the bus state, coalesced: idle, it reads
+  now; with a read in flight, it queues one re-read after it however many
+  calls land meanwhile; an engine-ready re-read already settling covers it.
+  Stable identity (safe in any deps list); a no-op on hosts without the bus
+  surface and after unmount. The S-019 recovery rules are unchanged: no
+  overlapping recovery reads, the newest read wins, unmount cancels
+  everything.
+- `GeneratorPanelCore.onTracksChanged(listener)` (additive): fires after every
+  successful, non-stale `loadTracks` and after an Add Track that doesn't
+  reload. `GeneratorPanelShell` forwards it to `notifyTracksChanged`, so every
+  panel-core panel (synth, bass, pad, arpeggiator, ensemble, text2voice,
+  synthv, livecode) gets the fix with no plugin change. A panel that mounts
+  `usePanelBus` itself (drum, instrument, and loops once it mounts the strip)
+  calls `panelBus.notifyTracksChanged()` at the end of its own track reload.
+- No host change is needed: works against any host that has
+  `getPanelBusState`. The `usePanelBus` header no longer claims that a read
+  never engages a bus (false since the 08-10 auto-engage).
+
 ## 3.18.0 — `importSamples` returns the sample ids it produced; samples carry `importedAt` / `origin`; the panel bus strip recovers after a slow project load
 
 - Bug it unblocks: the loops panel's **Load** button imported the picked files

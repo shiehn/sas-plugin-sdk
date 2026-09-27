@@ -18,11 +18,18 @@
  *  2. A bounded backoff after a failed read (1 s, 2 s, 4 s, 8 s, 15 s = 30 s),
  *     then quiet until the next signal or a new reader (scene change).
  *
+ * Freshness (S-027 S8, SDK 3.19.0): `refresh()` says "the state behind this
+ * read just changed" (the panel created or loaded tracks, which the host
+ * routes into the bus on the next read). It needs a read that STARTS after
+ * the call, and gets one without a settle delay: now when idle, once after
+ * the read in flight, or from a signal already settling.
+ *
  * Invariants:
  *  - Recovery reads never overlap: a retry that comes due while the latest
  *    read is still pending is dropped (that read re-arms the backoff if it
- *    fails), and a signal that lands mid-read queues ONE re-read after it.
- *    Explicit `read()` calls (initial load, post-mutation) run immediately.
+ *    fails), and a signal or refresh that lands mid-read queues ONE re-read
+ *    after it, however many land. Explicit `read()` calls (initial load,
+ *    post-mutation) run immediately.
  *  - The latest-started read wins; a superseded read's result is discarded.
  *  - A failed or empty (null/undefined) read keeps the previous value.
  *  - `dispose()` (unmount, scene change) cancels every timer and discards
@@ -58,6 +65,14 @@ export interface RecoveringRead {
   read(): Promise<void>;
   /** A lifecycle signal (engine ready): re-read after the settle window, with a fresh retry budget. */
   signal(): void;
+  /**
+   * The state behind the read changed: make sure a read starts after this
+   * call, with a fresh retry budget and no settle delay. Idle: reads now. A
+   * read in flight: exactly one re-read after it (a burst collapses into it).
+   * A signal already settling: nothing more, its read starts later anyway.
+   * No-op once disposed. @since SDK 3.19.0
+   */
+  refresh(): void;
   /** Stop for good: cancels pending timers and discards reads in flight. */
   dispose(): void;
 }
@@ -158,6 +173,12 @@ export function createRecoveringRead<T>(options: RecoveringReadOptions<T>): Reco
         settleTimer = null;
         if (!disposed) startEpisode();
       }, settleMs);
+    },
+    refresh: (): void => {
+      if (disposed) return;
+      // A settling signal will start a read after this call: it covers us.
+      if (settleTimer !== null) return;
+      startEpisode();
     },
     dispose: (): void => {
       disposed = true;

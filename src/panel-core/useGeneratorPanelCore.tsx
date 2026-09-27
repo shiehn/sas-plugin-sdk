@@ -46,6 +46,7 @@ import {
   type ResolvedTrackGroup,
 } from './group-meta';
 import { altGroupsFromTracks, type AltTrackMeta } from './alt-tracks';
+import { createTracksChangedChannel } from './tracks-changed';
 import type {
   GeneratorPanelAdapter,
   GenerationServices,
@@ -79,6 +80,16 @@ export interface GeneratorPanelCore {
   isLoadingTracks: boolean;
   loadTracks(incremental?: boolean): Promise<void>;
   engineToDbId(trackId: string): string;
+  /**
+   * Subscribe to "this panel's track set changed". Fires after every
+   * successful, non-stale `loadTracks` (which every create path, agent
+   * mutation, engine-ready re-adopt and bulk-compose completion ends in) and
+   * after an Add Track that doesn't reload. `GeneratorPanelShell` forwards it
+   * to `usePanelBus().notifyTracksChanged`, so a new track joins its scene
+   * bus at once (S-027 gap G1). Stable identity; returns the unsubscribe.
+   * @since SDK 3.19.0
+   */
+  onTracksChanged(listener: () => void): () => void;
 
   // Meters / solo / reorder / history
   supportsMeters: boolean;
@@ -285,6 +296,11 @@ export function useGeneratorPanelCore({
   // scene switch and load completion shows empty, not the prior scene's tracks.
   const tracksLoadedForSceneRef = useRef<string | null>(null);
 
+  // "The track set changed" → the shell's panel bus re-read (S-027 S8, gap
+  // G1). One channel for the panel's lifetime: stable, so listing it in
+  // loadTracks' deps never re-creates loadTracks.
+  const [tracksChanged] = useState(createTracksChangedChannel);
+
   // --- Sound history ------------------------------------------------------
   // Persist per-track history to project scene-data so it survives reopen.
   const persistSoundHistory = useCallback(
@@ -446,6 +462,11 @@ export function useGeneratorPanelCore({
             }
             setGenericGroupMetas(map);
           }
+          // Every create path (add, port, import, crossfade/fade, family
+          // voices, bulk compose, agent tools) and every re-adopt ends in a
+          // load: re-read the bus now so the host routes the new or adopted
+          // tracks into it (S-027 G1). Coalesced on the bus side.
+          tracksChanged.emit();
         }
       } catch (error: unknown) {
         console.error(`[${logTag}] Failed to load tracks:`, error);
@@ -456,7 +477,7 @@ export function useGeneratorPanelCore({
         }
       }
     },
-    [host, activeSceneId, soundHistory, adapter, logTag],
+    [host, activeSceneId, soundHistory, adapter, logTag, tracksChanged],
   );
 
   useEffect(() => {
@@ -617,7 +638,11 @@ export function useGeneratorPanelCore({
         } catch (err: unknown) {
           console.warn(`[${logTag}] onTrackCreated failed (non-fatal):`, err);
         }
-        await loadTracks(true);
+        await loadTracks(true); // its end tells the bus
+      } else {
+        // No reload follows, so tell the bus here: the new track joins the
+        // scene bus now, and the first track of a fresh scene engages it.
+        tracksChanged.emit();
       }
       onExpandSelf?.();
       // Auto-focus the prompt input of the newly created track after the
@@ -637,7 +662,7 @@ export function useGeneratorPanelCore({
       isAddingTrackRef.current = false;
       setIsAddingTrack(false);
     }
-  }, [host, adapter, identity, activeSceneId, isConnected, isAuthenticated, tracks.length, onExpandSelf, loadTracks, logTag]);
+  }, [host, adapter, identity, activeSceneId, isConnected, isAuthenticated, tracks.length, onExpandSelf, loadTracks, logTag, tracksChanged]);
 
   // --- Port track (cross-panel import) -----------------------------------
   // Pull a MIDI part out of a track owned by ANOTHER panel in THIS scene and
@@ -1915,6 +1940,7 @@ export function useGeneratorPanelCore({
     isLoadingTracks,
     loadTracks,
     engineToDbId,
+    onTracksChanged: tracksChanged.subscribe,
     supportsMeters,
     trackLevels,
     anySolo,

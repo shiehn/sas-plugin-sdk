@@ -245,12 +245,20 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
     setGroupMute,
     setGroupSolo,
     deleteGroup,
+    onTracksChanged,
   } = core;
   const { host, activeSceneId, isAuthenticated, sceneContext, onSelectScene, onOpenContract } = ui;
   // Panel mix bus (docs/panel-bus.md §11): shared strip for every core-based
   // panel. Feature-gated — renders nothing on hosts without the bus surface,
   // which also keeps the Phase-0 pin harness (mock host) byte-identical.
   const panelBus = usePanelBus(host, activeSceneId);
+  // A new or re-adopted track joins its scene bus at once (S-027 S8, gap G1):
+  // every track-set change the core reports re-reads the bus, and the host
+  // routes (and, for a fresh scene's first track, engages) on that read. Both
+  // ends are stable, so this subscribes once per panel lifetime; it is a
+  // local listener, not a host subscription, so it can't deafen panel-core.
+  const notifyBusTracksChanged = panelBus.notifyTracksChanged;
+  useEffect(() => onTracksChanged(notifyBusTracksChanged), [onTracksChanged, notifyBusTracksChanged]);
   const { identity, features } = adapter;
   // Alt-group collapse is view-local (a glance-level affordance, not document
   // state) — unlike the generic CollapsibleGroup, which persists per group
