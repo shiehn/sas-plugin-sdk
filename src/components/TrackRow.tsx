@@ -31,8 +31,11 @@ import { stepStatusText, type GenerationStep } from '../panel-core/generation-pr
 // ============================================================================
 
 export interface SDKTrackRowProps {
-  /** Track identity */
-  track: { id: string; name: string; role?: string };
+  /** Track identity. `id` is the engine track id; `dbId` (the DB row id,
+   *  @since SDK 3.20.0) is optional. Both are rendered as `data-track-id` /
+   *  `data-track-db-id` on the row wrapper so the host can find the row to
+   *  reveal it (agent auto-reveal). */
+  track: { id: string; name: string; role?: string; dbId?: string };
   /** Current prompt text (optional — omit when using contentSlot) */
   prompt?: string;
   /** Playback state */
@@ -344,7 +347,14 @@ export function TrackRow({
     : 'border-sas-border';
 
   return (
-    <div data-testid="sdk-track-row-wrapper" className="w-full" {...(drag?.rowProps ?? {})}>
+    <div
+      data-testid="sdk-track-row-wrapper"
+      data-track-id={track.id}
+      data-track-db-id={track.dbId}
+      data-track-role={track.role}
+      className="w-full"
+      {...(drag?.rowProps ?? {})}
+    >
       <div
         data-testid="sdk-track-row"
         ref={rowRef}

@@ -19,6 +19,10 @@ export {
   type ResolvedGroupFade,
 } from './useTransitionOps';
 export { type GeneratorTrackState, newTrackState, carryTrackViewState } from './track-state';
+// Agent auto-reveal: map a host PluginRevealRequest to a panel's own track.
+// Monolith panels that subscribe to host.onRevealRequest themselves use it too.
+// Since 3.20.0.
+export { findRevealTrackId } from './reveal';
 export {
   trackDataKey,
   generationBlockedBy,

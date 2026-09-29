@@ -539,13 +539,41 @@ export interface GeneratorPlugin {
    * language work to the in-app agent via a single call.
    */
   getSkills?(): PluginSkill[];
+
+  /**
+   * Optional: Contribute agent skills. An agent skill is knowledge, not an
+   * action: musical know-how, decision heuristics, and which of this plugin's
+   * actions carry it out (e.g. the bass plugin's "bassline" skill explains
+   * root/fifth motion, locking to the kick, and genre idioms, and points at
+   * its `generate_bassline` action).
+   *
+   * The host merges these into its shared agent-skill registry next to the
+   * built-in skills, so every agent sees them: the in-app chat, the `sas` CLI
+   * and MCP clients. Agents list skills by name + description and load a body
+   * only when a request needs it.
+   *
+   * Called at activation. Return a static list, and keep bodies within
+   * `AGENT_SKILL_LIMITS` (check them with `validatePluginAgentSkill`). Hosts
+   * older than 3.20.0 never call this, so it is safe to implement
+   * unconditionally.
+   *
+   * @since SDK 3.20.0
+   */
+  getAgentSkills?(): PluginAgentSkill[];
 }
 
 // ============================================================================
 // Plugin Skills (AI Harness)
 // ============================================================================
 
-/** An LLM-callable action declared by a plugin. */
+/**
+ * An LLM-callable action declared by a plugin.
+ *
+ * Naming: despite the historical name, this is an ACTION (a tool the agent
+ * calls, registered as `plugin:<pluginId>:<id>`). Knowledge packs the agent
+ * reads are `PluginAgentSkill`s (see `getAgentSkills`). New code can use the
+ * `PluginAction` alias.
+ */
 export interface PluginSkill {
   /** Unique skill id within this plugin (e.g., 'chat', 'generate_bassline') */
   id: string;
@@ -562,6 +590,101 @@ export interface PluginSkillInputSchema {
   type: 'object';
   properties?: Record<string, unknown>;
   required?: string[];
+}
+
+/**
+ * Preferred name for `PluginSkill`: an LLM-callable action.
+ * @since SDK 3.20.0
+ */
+export type PluginAction = PluginSkill;
+
+// ============================================================================
+// Agent Skills (knowledge packs)
+//
+// An agent skill is markdown knowledge: musical know-how plus decision
+// heuristics, and which actions carry it out. It is not a script; the agent
+// still chooses roles, plugins and prompts. Loading is progressive:
+//   Level 1  name + description (+ whenToUse) sit in the agent's index;
+//   Level 2  the body is loaded when a request needs it;
+//   Level 3  optional reference files next to a built-in SKILL.md.
+// Sources: the host's built-in skills (SKILL.md files) and plugins
+// (`GeneratorPlugin.getAgentSkills`).
+// ============================================================================
+
+/** Broad kind of an agent skill, used to group the index. @since SDK 3.20.0 */
+export type AgentSkillCategory = 'technique' | 'genre' | 'procedure' | 'reference';
+
+/**
+ * Level-1 metadata of an installed agent skill. The well-known fields are
+ * typed; any other frontmatter key an author included passes through.
+ *
+ * `name` + `description` exist since SDK 2.5.0 (host-side); the typed optional
+ * fields are @since SDK 3.20.0.
+ */
+export interface AgentSkillMetadata {
+  /** kebab-case identifier, unique across all sources. */
+  name: string;
+  /** One-line description the agent uses to decide when to load the skill. */
+  description: string;
+  /** Short trigger hint: the kind of request this skill is for. */
+  whenToUse?: string;
+  category?: AgentSkillCategory;
+  /** Free-form search tags. */
+  tags?: string[];
+  /** Genre names and aliases this skill covers (matched against a scene's genre). */
+  genres?: string[];
+  /** Canonical track roles this skill is about (e.g. 'kicks', 'bass'). */
+  roles?: string[];
+  /** Registry tool names the body relies on. */
+  relatedTools?: string[];
+  /** Other skills worth loading alongside this one. */
+  relatedSkills?: string[];
+  /** Where the skill came from. Set by the host. */
+  source?: 'builtin' | 'plugin' | 'user';
+  /** Contributing plugin, when `source === 'plugin'`. */
+  pluginId?: string;
+  /** Any additional frontmatter keys the author included. */
+  [key: string]: unknown;
+}
+
+/** Level-2 read of an agent skill: metadata plus the markdown body. */
+export interface AgentSkillManifest {
+  metadata: AgentSkillMetadata;
+  /** Markdown body (for a SKILL.md, everything after the closing `---`). */
+  body: string;
+  /** Absolute path to a built-in skill's directory (Level-3 files). Absent for plugin skills. */
+  rootDir?: string;
+  /** Absolute path to a built-in skill's SKILL.md. Absent for plugin skills. */
+  skillMdPath?: string;
+}
+
+/**
+ * An agent skill contributed by a plugin via `GeneratorPlugin.getAgentSkills`.
+ *
+ * In `body`, refer to this plugin's own actions as `{{action:<actionId>}}`.
+ * The host rewrites each token to the registered tool name
+ * (`plugin:<pluginId>:<actionId>`) when the skill is loaded, so authors never
+ * hard-code the host's naming scheme. See `resolveAgentSkillActionTokens`.
+ *
+ * @since SDK 3.20.0
+ */
+export interface PluginAgentSkill {
+  /** kebab-case, unique across all skills (prefix with the plugin's domain, e.g. 'bass-voices'). */
+  name: string;
+  /** One line, at most `AGENT_SKILL_LIMITS.descriptionMaxChars`. */
+  description: string;
+  whenToUse?: string;
+  category?: AgentSkillCategory;
+  tags?: string[];
+  genres?: string[];
+  roles?: string[];
+  /** Ids of THIS plugin's actions (`PluginSkill.id`) the body relies on. */
+  relatedActions?: string[];
+  /** Host registry tools the body relies on. */
+  relatedTools?: string[];
+  relatedSkills?: string[];
+  /** Markdown knowledge, at most `AGENT_SKILL_LIMITS.pluginBodyMaxChars`. */
+  body: string;
 }
 
 // ============================================================================
@@ -1653,6 +1776,31 @@ export interface PluginHost {
    */
   getMutationSeq(): number;
 
+  // --- Agent Skills (knowledge packs) ---
+
+  /**
+   * Level-1 listing of every installed agent skill: built-in ones and those
+   * contributed by plugins (`GeneratorPlugin.getAgentSkills`). Metadata only;
+   * bodies are not loaded. Agents build their skill index from this.
+   *
+   * Optional: hosts older than 3.20.0 may not expose it on the plugin host,
+   * and renderer-side host proxies omit it. Feature-detect before calling.
+   *
+   * @since SDK 3.20.0 (host-side since 2.5.0)
+   */
+  listAgentSkills?(): Promise<AgentSkillMetadata[]>;
+
+  /**
+   * Level-2 read of one agent skill by name: metadata plus the markdown body,
+   * with a plugin skill's `{{action:x}}` tokens already rewritten to
+   * registered tool names. Null when no such skill is installed.
+   *
+   * Optional, like `listAgentSkills`.
+   *
+   * @since SDK 3.20.0 (host-side since 2.5.0)
+   */
+  readAgentSkill?(name: string): Promise<AgentSkillManifest | null>;
+
   // --- Preset System ---
 
   /** Get available preset categories for a synth plugin. */
@@ -2270,6 +2418,23 @@ export interface PluginHost {
    * plugins should subscribe to the typed domain-event bus instead.
    */
   onAfterAgentMutation?(listener: () => void): UnsubscribeFn;
+
+  /**
+   * Subscribe to reveal requests: the host asking this panel to show one of
+   * its tracks, because an agent changed it or asked for it
+   * (e.g. "show me the bass FX"). The host itself handles opening the panel
+   * and scrolling to the row (it finds the row via the `data-track-id` /
+   * `data-track-db-id` attributes `TrackRow` renders). What only the panel can
+   * do is change its own UI state, e.g. open the track's drawer to a tab.
+   * `useGeneratorPanelCore` does this for every panel-core panel; monolith
+   * panels subscribe themselves and ignore requests for tracks they don't own.
+   *
+   * Optional: renderer-side hosts that implement agent auto-reveal expose it.
+   * Feature-detect before calling.
+   *
+   * @since SDK 3.20.0
+   */
+  onRevealRequest?(listener: (request: PluginRevealRequest) => void): UnsubscribeFn;
 
   // --- MIDI Extensions (Phase 2) ---
 
@@ -3273,6 +3438,31 @@ export type TransportEventListener = (event: TransportEvent) => void;
 export type DeckBoundaryListener = (event: DeckBoundaryEvent) => void;
 export type SceneChangeListener = (sceneId: string | null) => void;
 export type UnsubscribeFn = () => void;
+
+/**
+ * Drawer tab a reveal request may ask for. Mirrors the `DrawerTab` values
+ * `TrackDrawer` supports; a panel that doesn't offer the tab ignores it.
+ * @since SDK 3.20.0
+ */
+export type PluginRevealDrawerTab = 'fx' | 'history' | 'edit' | 'freeze' | 'pick' | 'import';
+
+/**
+ * A host request to reveal one track in its panel (see
+ * `PluginHost.onRevealRequest`). At least one of `trackId` / `trackDbId` is
+ * set. The host has already opened the panel and scrolls/highlights the row;
+ * the panel only applies UI state it owns.
+ * @since SDK 3.20.0
+ */
+export interface PluginRevealRequest {
+  /** Engine track id (`PluginTrackHandle.id`). */
+  trackId?: string;
+  /** DB track id (`PluginTrackHandle.dbId`). */
+  trackDbId?: string;
+  /** Open the track's drawer to this tab. Omitted: leave the drawer as it is. */
+  drawerTab?: PluginRevealDrawerTab;
+  /** Correlates the request with the host's reveal/ack bookkeeping. */
+  requestId?: string;
+}
 
 // ============================================================================
 // LLM Types

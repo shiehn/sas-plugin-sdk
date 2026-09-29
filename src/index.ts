@@ -77,6 +77,9 @@ export type {
   DeckBoundaryListener,
   SceneChangeListener,
   UnsubscribeFn,
+  // Agent auto-reveal (SDK 3.20.0): host → panel "show this track" requests.
+  PluginRevealRequest,
+  PluginRevealDrawerTab,
   LLMGenerationRequest,
   LLMGenerationResult,
   // Tool-use LLM types — agentic plugins (chat panel, etc.) use these via
@@ -104,6 +107,13 @@ export type {
   // plugins that expose a `chat` or similar agent-delegation skill.
   PluginSkill,
   PluginSkillInputSchema,
+  PluginAction,
+  // Agent skills (SDK 3.20.0): knowledge packs, not actions. Plugins
+  // contribute them via GeneratorPlugin.getAgentSkills; hosts list/read them.
+  PluginAgentSkill,
+  AgentSkillCategory,
+  AgentSkillMetadata,
+  AgentSkillManifest,
   PluginErrorCode,
   PluginManifest,
   PluginCapabilities,
@@ -382,6 +392,19 @@ export {
   formatMusicalContext,
   type FormatMusicalContextOptions,
 } from './utils/format-musical-context';
+
+// Agent-skill limits, validation and {{action:x}} token rewriting — shared by
+// plugin authors (assert validatePluginAgentSkills(...) is empty in a test)
+// and the host's agent-skill registry. Since 3.20.0.
+export {
+  AGENT_SKILL_LIMITS,
+  isValidAgentSkillName,
+  extractAgentSkillActionTokens,
+  resolveAgentSkillActionTokens,
+  validatePluginAgentSkill,
+  validatePluginAgentSkills,
+  type ValidatePluginAgentSkillOptions,
+} from './utils/agent-skills';
 
 // Semantic sample matching — pick the closest sample to a text intent by
 // scoring against each sample's StableAudio prompt, with variety-preserving

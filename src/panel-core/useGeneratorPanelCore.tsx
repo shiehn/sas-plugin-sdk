@@ -47,6 +47,7 @@ import {
 } from './group-meta';
 import { altGroupsFromTracks, type AltTrackMeta } from './alt-tracks';
 import { createTracksChangedChannel } from './tracks-changed';
+import { findRevealTrackId } from './reveal';
 import type {
   GeneratorPanelAdapter,
   GenerationServices,
@@ -1658,6 +1659,24 @@ export function useGeneratorPanelCore({
     },
     [host, availableInstruments.length, instrumentsLoading, loadEditNotes],
   );
+
+  // --- Agent auto-reveal (SDK 3.20.0) -------------------------------------
+  // The host opens the panel and scrolls to / highlights the row itself; the
+  // panel applies only state it owns: the drawer tab. Requests for tracks
+  // this panel doesn't own are ignored. `handleTabChange` also runs the
+  // tab's lazy loads (instruments for Pick, MIDI for Edit), exactly as a
+  // click would.
+  const revealTracksRef = useRef(tracks);
+  revealTracksRef.current = tracks;
+  useEffect(() => {
+    if (typeof host.onRevealRequest !== 'function') return;
+    const unsub = host.onRevealRequest((request) => {
+      if (!request.drawerTab) return;
+      const trackId = findRevealTrackId(revealTracksRef.current, request);
+      if (trackId) handleTabChange(trackId, request.drawerTab);
+    });
+    return () => unsub?.();
+  }, [host, handleTabChange]);
 
   // --- Progress persistence callback --------------------------------------
   const handleProgressChange = useCallback((trackId: string, pct: number): void => {

@@ -333,7 +333,7 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
         : {};
       const props: SDKTrackRowProps = {
         ...(drag ? { drag } : {}),
-        track: { id, name: track.handle.name, role: track.role },
+        track: { id, name: track.handle.name, role: track.role, dbId: track.handle.dbId },
         levels: supportsMeters ? trackLevels : undefined,
         prompt: track.prompt,
         runtimeState: {

@@ -4,6 +4,59 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.20.0 — agent skills in the SDK contract; the agent auto-reveal hooks
+
+Part of the chat interface North Star (`sas-chat-plugin/docs/NORTH-STAR.md`):
+the agent should be able to control all of S&S by text; the UI should show
+every agent change as if the user had clicked; and it should read open-ended
+musical requests with knowledge packs rather than hard-coded recipes. Every
+addition here is additive and optional, and no plugin needs a
+`minHostVersion` bump.
+
+- **Agent skills (knowledge packs).** An agent skill is markdown knowledge
+  (musical know-how, decision heuristics, and which actions carry it out). It
+  is not a script and not an action.
+  - Moved into the SDK: `AgentSkillMetadata`, `AgentSkillManifest`, and the
+    optional host methods `listAgentSkills?()` / `readAgentSkill?(name)`. The
+    host has had these since 2.5.0, but the SDK never declared them.
+  - `AgentSkillMetadata` gains typed optional fields: `whenToUse`,
+    `category`, `tags`, `genres`, `roles`, `relatedTools`, `relatedSkills`,
+    `source` and `pluginId`.
+  - `AgentSkillManifest.rootDir` / `skillMdPath` are now optional, because a
+    plugin-contributed skill has no directory.
+- **Plugins can contribute skills.** Declare them with the new
+  `GeneratorPlugin.getAgentSkills?(): PluginAgentSkill[]`.
+  - The host merges them into its shared registry, so every agent sees them:
+    the in-app chat, the `sas` CLI and MCP clients.
+  - In a skill body, write `{{action:<id>}}` to reference one of the plugin's
+    own actions. The host rewrites it to `plugin:<pluginId>:<id>` when the
+    skill loads.
+- **New helpers:** `AGENT_SKILL_LIMITS` (description ≤200 chars, plugin body
+  ≤12K, ≤8 skills per plugin), `validatePluginAgentSkill(s)` (with the
+  plugin's action ids, it also checks every token), `isValidAgentSkillName`,
+  `extractAgentSkillActionTokens` and `resolveAgentSkillActionTokens`. Plugin
+  authors should assert `validatePluginAgentSkills(...)` is empty in a test.
+- **Naming.** `PluginAction` is a new alias for `PluginSkill`. That type has
+  always been an action, i.e. a tool the agent calls. "Skill" now means
+  knowledge.
+- **Auto-reveal, the panel's half.**
+  - `TrackRow` renders `data-track-id` (engine id), `data-track-db-id` and
+    `data-track-role` on its wrapper. The host uses them to find a row it
+    should scroll to and highlight. `track.dbId` is a new optional prop, and
+    `GeneratorPanelShell` passes it through.
+  - New `PluginHost.onRevealRequest?(listener)`, carrying
+    `PluginRevealRequest { trackId?, trackDbId?, drawerTab?, requestId? }`.
+    It lets the host ask a panel to apply UI state that only the panel owns.
+    `useGeneratorPanelCore` subscribes, so every panel-core panel opens the
+    drawer to the requested tab (running the same lazy loads a click runs).
+  - `findRevealTrackId` (exported from panel-core) maps a request to a
+    panel's own track. Monolith panels (drum, instrument, loops) subscribe
+    themselves and ignore requests for tracks they don't own.
+- **Host side:** the shared agent-skill registry and the reveal dispatch are
+  sas-app work (chat North-Star work orders). Until a host ships them, all of
+  the above does nothing: the methods are feature-detected and the
+  attributes are inert.
+
 ## 3.19.0 — a newly created panel track joins its scene bus at once
 
 - Bug it fixes (S-027 gap G1): the host routes a panel's tracks into its
