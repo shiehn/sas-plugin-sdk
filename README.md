@@ -304,6 +304,13 @@ Versioned sample packs (drums, instruments, the loop/sample library) install on 
 | `startSamplePackDownload(packId)` | Trigger download + install; resolves `{ success, error? }` |
 | `onSamplePackProgress(packId, listener)` | Subscribe to `{ status, progress }` updates; returns an unsubscribe fn |
 
+### Sample Library Files
+| Method | Description |
+|--------|-------------|
+| `listAudioFiles(rootPath, { extensions?, recursive? })` | Absolute paths of the audio files under a root |
+| `readTextFile(absolutePath)` | A UTF-8 file's contents, or null on any error |
+| `scanInstrumentLibrary?(root, { refresh? })` | *(optional, since SDK 3.21.0)* The instrument pack's whole scan in one call, cached by the host: flat instruments with their prompts, and each manifest folder's trimmed `manifest.json`. Feature-detect it; fall back to `listAudioFiles` + `readTextFile` |
+
 ### Deck Playback *(since SDK 2.9.0)*
 The two playback decks: `'loop-a'` (composition / cue, headphones) and `'loop-b'` (performance / main). These route through the **same host path the workstation UI uses**, so the deck mutual-exclusivity rules (the host's PlaybackRuleEngine) are enforced identically — a plugin can't bypass them. Used by playback-driven plugins (e.g. the recorder, which starts loop-a so a take has a backing loop). Available to renderer-hosted plugins.
 

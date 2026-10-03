@@ -97,6 +97,84 @@ export interface ListAudioFilesOptions {
   recursive?: boolean;
 }
 
+/** Options for `host.scanInstrumentLibrary`. @since SDK 3.21.0 */
+export interface ScanInstrumentLibraryOptions {
+  /**
+   * Drop the host's cached scan of this root and walk it again (e.g. after a
+   * re-install at the same pack version). Defaults to `false`.
+   */
+  refresh?: boolean;
+}
+
+/**
+ * One zone of an instrument manifest, as the manifest spells it (snake_case,
+ * `sample` relative to the manifest's folder). @since SDK 3.21.0
+ */
+export interface InstrumentManifestZone {
+  sample: string;
+  root_midi: number;
+  min_midi: number;
+  max_midi: number;
+}
+
+/**
+ * The fields of a pitched-instrument `manifest.json` that the instrument
+ * plugin uses, trimmed by the host (about 910 B per manifest instead of
+ * ~3.1 KB on disk). The host trims but does NOT validate: a manifest that
+ * parses can still carry another `schema_version` or no zones, so callers
+ * keep their own validation. @since SDK 3.21.0
+ */
+export interface InstrumentManifestFields {
+  schema_version: number;
+  instrument_id: string;
+  category_display?: string;
+  open_ended?: boolean;
+  prompt: string;
+  zones: InstrumentManifestZone[];
+}
+
+/**
+ * A flat instrument: a `<category>/<file>.wav|.flac` sample directly under a
+ * category. @since SDK 3.21.0
+ */
+export interface InstrumentLibraryFlatEntry {
+  categoryId: string;
+  /** The sample's file name, extension included. */
+  filename: string;
+  /** The sibling `<name>.txt` prompt's contents as read (callers trim); null: none or unreadable. */
+  prompt: string | null;
+}
+
+/**
+ * A manifest folder: `<category>/<subdir>/manifest.json`. @since SDK 3.21.0
+ */
+export interface InstrumentLibraryFolderEntry {
+  categoryId: string;
+  subdir: string;
+  /** The trimmed manifest; null when `manifest.json` is missing, unreadable or invalid JSON. */
+  manifest: InstrumentManifestFields | null;
+  /** Why `manifest` is null (for the caller's log). One bad folder never fails the scan. */
+  error?: string;
+}
+
+/**
+ * The host's scan of an instrument pack root (`host.scanInstrumentLibrary`):
+ * exactly what a `listAudioFiles(root, { recursive: true, extensions:
+ * ['.wav', '.flac'] })` walk plus one `readTextFile` per flat prompt and per
+ * manifest would read, classified the same way:
+ * - paths relative to `root`; fewer than 2 segments are ignored;
+ * - any `_`-prefixed segment is skipped (e.g. `_failures/`);
+ * - 2 segments → `flat`; 3 or more → a `<category>/<subdir>` entry in `folders`.
+ * @since SDK 3.21.0
+ */
+export interface InstrumentLibraryScan {
+  root: string;
+  /** `_pack-version.json`'s version ('' when the root has none). */
+  version: string;
+  flat: InstrumentLibraryFlatEntry[];
+  folders: InstrumentLibraryFolderEntry[];
+}
+
 /**
  * Exact media properties of one audio file on disk, as reported by
  * `host.getAudioFileInfo`.
@@ -1255,6 +1333,24 @@ export interface PluginHost {
    * @since SDK 1.4.0
    */
   readTextFile(absolutePath: string): Promise<string | null>;
+
+  /**
+   * The instrument pack's scan, done (and cached) by the host: one call
+   * instead of a `listAudioFiles` walk plus one `readTextFile` per prompt and
+   * manifest (a v3 pack is ~68K audio paths and ~5.5K manifests). See
+   * `InstrumentLibraryScan` for the classification, which matches that walk.
+   *
+   * The host caches per `root`, keyed by `_pack-version.json`'s version (or
+   * the category dirs' mtimes when the root has none), so the result
+   * survives renderer reloads; concurrent first calls share one scan.
+   * `refresh: true` forces a rescan.
+   *
+   * Optional: absent on hosts older than 3.21.0. Feature-detect it and fall
+   * back to `listAudioFiles` + `readTextFile`.
+   *
+   * @since SDK 3.21.0
+   */
+  scanInstrumentLibrary?(root: string, opts?: ScanInstrumentLibraryOptions): Promise<InstrumentLibraryScan>;
 
   // --- Scene Context (read-only) ---
 

@@ -163,6 +163,13 @@ export type {
   InstrumentZone,
   InstrumentSampler,
   ListAudioFilesOptions,
+  // Instrument library scan, done by the host (since SDK 3.21.0)
+  ScanInstrumentLibraryOptions,
+  InstrumentLibraryScan,
+  InstrumentLibraryFlatEntry,
+  InstrumentLibraryFolderEntry,
+  InstrumentManifestFields,
+  InstrumentManifestZone,
   // Reference pinning + active-scene track enumeration (since SDK 2.42.0)
   PluginGenerationContextOptions,
   SceneTrackSummary,

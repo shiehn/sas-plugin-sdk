@@ -4,6 +4,36 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.21.0 — the instrument library scan, done by the host
+
+Part of the performance work (D-094). The instrument panel scanned the v3 pack
+from the renderer on every page load: a `listAudioFiles` walk (~68K paths,
+~7.5 MB in one IPC) and then one `readTextFile` per manifest (~5.5K), cached
+only in renderer memory, so every reload scanned again. Additive and optional;
+no plugin needs a `minHostVersion` bump.
+
+- **New optional host method** `PluginHost.scanInstrumentLibrary?(root, opts?)`
+  returns an `InstrumentLibraryScan` in one call:
+  - `{ root, version, flat[], folders[] }`, classified exactly like today's
+    walk (`.wav`/`.flac`, recursive; fewer than 2 segments ignored;
+    `_`-prefixed segments skipped; 2 segments are flat instruments with their
+    `.txt` prompt, 3 or more are a `<category>/<subdir>` manifest folder);
+  - each folder carries its `manifest.json` trimmed to the fields the plugin
+    uses (`InstrumentManifestFields`), or `null` plus an `error` when it is
+    missing, unreadable or invalid JSON. The host does not validate a
+    manifest; callers keep their own checks;
+  - the host caches per root by `_pack-version.json`'s version (or the
+    category dirs' mtimes), so the scan survives renderer reloads.
+    `opts.refresh` forces a rescan.
+- **New types:** `InstrumentLibraryScan`, `InstrumentLibraryFlatEntry`,
+  `InstrumentLibraryFolderEntry`, `InstrumentManifestFields`,
+  `InstrumentManifestZone` and `ScanInstrumentLibraryOptions`.
+- **Feature-detect it.** On an older host the method is absent; fall back to
+  `listAudioFiles` + `readTextFile` and build the same shape.
+- **Host and plugin sides:** the host scan and cache (sas-app main) and the
+  instrument plugin's scan/build split are separate work. Until a host ships
+  the method, this release changes nothing.
+
 ## 3.20.0 — agent skills in the SDK contract; the agent auto-reveal hooks
 
 Part of the chat interface North Star (`sas-chat-plugin/docs/NORTH-STAR.md`):
