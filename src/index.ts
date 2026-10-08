@@ -170,12 +170,15 @@ export type {
   InstrumentLibraryFolderEntry,
   InstrumentManifestFields,
   InstrumentManifestZone,
+  // Did the plugin load the state it was given? (since SDK 3.22.0)
+  AwaitStateAppliedOptions,
+  StateApplyVerdict,
   // Reference pinning + active-scene track enumeration (since SDK 2.42.0)
   PluginGenerationContextOptions,
   SceneTrackSummary,
 } from './types/plugin-sdk.types';
 
-export { PluginError } from './types/plugin-sdk.types';
+export { PluginError, STATE_NOT_APPLIED } from './types/plugin-sdk.types';
 
 // ============================================================================
 // Components

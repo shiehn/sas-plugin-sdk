@@ -34,7 +34,7 @@ import { parseFades, splitFadeEntries, type FadeEntry } from '../fade-meta';
 import type { DrawerTab } from '../components/TrackDrawer';
 import { type GeneratorTrackState, newTrackState, carryTrackViewState } from './track-state';
 import { generationBlockedBy, trackDataKey } from './panel-helpers';
-import { runLinkedBroadcast, type GroupBroadcastProgress } from './linked-broadcast';
+import { runLinkedBroadcast, LINKED_APPLY_VERDICT_TIMEOUT_MS, type GroupBroadcastProgress } from './linked-broadcast';
 import { runGenerationTurn } from './generation-progress';
 import { copyTrackFxBestEffort } from './fx-copy';
 import { panelClipEndSeconds, panelQuarterNotesPerBar } from './meter';
@@ -1219,6 +1219,14 @@ export function useGeneratorPanelCore({
           }
           soundHistory.record(target.engineId, descriptor, label);
         },
+        // SDK 3.22.0: the engine's verdict per part ("→ All" of a Kontakt patch
+        // could land on some parts and silently miss others). A part that
+        // ignored it gets the state ONCE more — just the write, not history.
+        verifyTarget: adapter.sound.awaitSoundApplied
+          ? (target) =>
+              adapter.sound.awaitSoundApplied!(target.engineId, { timeoutMs: LINKED_APPLY_VERDICT_TIMEOUT_MS })
+          : undefined,
+        reapplyTarget: (target) => adapter.sound.applySound(target.engineId, descriptor),
       });
       // Shuffle-cycle coherence: these siblings now HAVE this sound — exclude
       // it from their own future shuffles this session.

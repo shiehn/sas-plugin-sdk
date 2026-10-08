@@ -534,7 +534,9 @@ export function GeneratorPanelShell({ core, slots }: GeneratorPanelShellProps): 
         >
           <div className="w-[min(20rem,90%)] rounded-sm border border-sas-border bg-sas-panel p-3 shadow-xl">
             <div className="mb-1 font-mono text-xs text-sas-text">
-              Applying {groupBroadcast.kind === 'sound' ? 'sound' : 'instrument'} to all parts…
+              {groupBroadcast.phase === 'verifying'
+                ? 'Checking every part loaded it…'
+                : `Applying ${groupBroadcast.kind === 'sound' ? 'sound' : 'instrument'} to all parts…`}
             </div>
             <div
               className="mb-2 truncate font-mono text-[10px] text-sas-muted"

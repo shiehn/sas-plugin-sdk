@@ -98,6 +98,24 @@ export function createSurgeSoundAdapter(
         })
         .catch(() => {});
     },
+    awaitSoundApplied: async (trackId: string, opts?: { timeoutMs?: number }) => {
+      // A host without the engine verdict (pre-3.22), or one that can't tell,
+      // reads as 'unknown' — the broadcast then behaves exactly as before.
+      if (typeof host.awaitStateApplied !== 'function') return 'unknown';
+      const inst = await getInstrument(host, trackId);
+      if (!inst) return 'unknown';
+      try {
+        const verdict = await host.awaitStateApplied(trackId, {
+          pluginIndex: inst.index,
+          ...(opts?.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+        });
+        if (verdict.status === 'verified') return 'verified';
+        if (verdict.status === 'not_applied') return 'not_applied';
+        return 'unknown';
+      } catch {
+        return 'unknown';
+      }
+    },
     descriptorFromSnapshot: (snap: TrackSoundSnapshot) => {
       const preset = snap as Extract<TrackSoundSnapshot, { kind: 'preset' }>;
       return { state: preset.state, stateType: preset.stateType };

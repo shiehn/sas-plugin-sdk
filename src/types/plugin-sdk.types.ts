@@ -97,6 +97,35 @@ export interface ListAudioFilesOptions {
   recursive?: boolean;
 }
 
+/** The engine's code for a state the plugin ignored (`host.awaitStateApplied`). @since SDK 3.22.0 */
+export const STATE_NOT_APPLIED = 'STATE_NOT_APPLIED' as const;
+
+/** Options for `host.awaitStateApplied`. @since SDK 3.22.0 */
+export interface AwaitStateAppliedOptions {
+  /** The plugin slot written. Default: the track's instrument (the slot a sound broadcast writes). */
+  pluginIndex?: number;
+  /**
+   * Give up after this long with `timeout`. Default 45 000 ms. The engine decides ~20 s after
+   * the write, but in a serial broadcast each write waits for the ones before it (~0.55 s per
+   * 2 MB Kontakt part), so the last part of a 15-voice ensemble is judged at ~28 s.
+   */
+  timeoutMs?: number;
+}
+
+/** `host.awaitStateApplied`'s verdict. @since SDK 3.22.0 */
+export type StateApplyVerdict =
+  | { status: 'verified' }
+  | {
+      status: 'not_applied';
+      errorCode: typeof STATE_NOT_APPLIED;
+      /** Size of the state the host gave the plugin. */
+      appliedBytes?: number;
+      /** Size the plugin itself reported at the last re-read. */
+      liveBytes?: number;
+    }
+  | { status: 'timeout' }
+  | { status: 'unsupported' };
+
 /** Options for `host.scanInstrumentLibrary`. @since SDK 3.21.0 */
 export interface ScanInstrumentLibraryOptions {
   /**
@@ -1224,6 +1253,29 @@ export interface PluginHost {
 
   /** Get a plugin's RAW VST3/AU state (see setRawPluginState). @since SDK 2.15.0 */
   getRawPluginState(trackId: string, pluginIndex: number): Promise<string>;
+
+  /**
+   * Did the plugin actually load the last state the host gave it? The
+   * engine's verdict for the most recent host state write on that plugin
+   * (setPluginState / setRawPluginState / a copy) — call it after the write
+   * resolves. setRawPluginState itself only acknowledges RECEIPT, and a read
+   * back can't tell: an untouched plugin reports exactly the state it was
+   * given (engine S-139 L1.2), and Kontakt answers an immediate read with a
+   * transitional near-empty state even when the apply works.
+   *
+   * The engine re-reads the plugin's LIVE state at +1 / +3 / +10 / +20 s:
+   * - `verified` at the first read that holds the state (typically 1–3 s);
+   * - `not_applied` (`errorCode: 'STATE_NOT_APPLIED'`) when a large state is
+   *   still near-empty after ~20 s — the plugin ignored it (a Kontakt left
+   *   with no instrument);
+   * - `timeout` when `timeoutMs` (default 45 s) runs out first;
+   * - `unsupported` when the engine can't verify this plugin.
+   * Never rejects. Optional: absent on hosts older than 3.22.0 — treat that
+   * like `unsupported` (behave as before: no retry, not a failure).
+   *
+   * @since SDK 3.22.0
+   */
+  awaitStateApplied?(trackId: string, opts?: AwaitStateAppliedOptions): Promise<StateApplyVerdict>;
 
   /**
    * Persist a preset as the track's durable sound identity (DB `preset_state`,

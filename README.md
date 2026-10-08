@@ -304,6 +304,13 @@ Versioned sample packs (drums, instruments, the loop/sample library) install on 
 | `startSamplePackDownload(packId)` | Trigger download + install; resolves `{ success, error? }` |
 | `onSamplePackProgress(packId, listener)` | Subscribe to `{ status, progress }` updates; returns an unsubscribe fn |
 
+### Plugin State *(raw state since SDK 2.15.0; apply verdict since 3.22.0)*
+| Method | Description |
+|--------|-------------|
+| `setPluginState/getPluginState` | A plugin's state through Tracktion's ValueTree (Surge XT) |
+| `setRawPluginState/getRawPluginState` | A third-party plugin's own raw state (Kontakt, Diva, Serum…); a write only acknowledges receipt |
+| `awaitStateApplied?(trackId, { pluginIndex?, timeoutMs? })` | *(optional, since 3.22.0)* Did the plugin actually load the last state it was given? `verified`, `not_applied` (`STATE_NOT_APPLIED`), `timeout` (default 45 s) or `unsupported`; the engine decides ~20 s after the write. Feature-detect it |
+
 ### Sample Library Files
 | Method | Description |
 |--------|-------------|

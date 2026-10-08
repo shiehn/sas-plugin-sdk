@@ -201,6 +201,16 @@ export interface PanelSoundAdapter {
    * @since SDK 2.48.0
    */
   persistDescriptor?(trackId: string, descriptor: unknown, label: string): Promise<void>;
+  /**
+   * Did the track's instrument actually load the sound just applied? The
+   * linked broadcast awaits it per target and re-applies a 'not_applied' part
+   * once (see `runLinkedBroadcast`'s `verifyTarget`). 'unknown' = can't tell
+   * (old host, timeout) → treated as applied. @since SDK 3.22.0
+   */
+  awaitSoundApplied?(
+    trackId: string,
+    opts?: { timeoutMs?: number },
+  ): Promise<'verified' | 'not_applied' | 'unknown'>;
 }
 
 /** The 🎲: pick + apply one new sound, honoring the exclusion cycle. */

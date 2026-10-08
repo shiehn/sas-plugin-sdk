@@ -41,6 +41,8 @@ export {
   type LinkedBroadcastTarget,
   type RunLinkedBroadcastOptions,
   type LinkedBroadcastResult,
+  type LinkedApplyVerdict,
+  LINKED_APPLY_VERDICT_TIMEOUT_MS,
 } from './linked-broadcast';
 export {
   runGenerationTurn,

@@ -4,6 +4,47 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.22.0 — "→ All" checks every part actually loaded the sound
+
+S-273 found an ensemble whose Kontakt patch, sent to 5 voices with "→ All",
+landed on 2 and silently missed 3. Those three kept an empty Kontakt and froze
+silent. A raw state write only acknowledges receipt, and a read-back can't
+tell: an untouched plugin reports exactly the state it was given (engine
+S-139 L1.2), and Kontakt answers an immediate read with a near-empty
+transitional state even when the apply works. So the verdict now comes from
+the engine. Additive and optional; no plugin needs a `minHostVersion` bump.
+
+- **New optional host method** `PluginHost.awaitStateApplied?(trackId, opts?)`
+  resolves the engine's verdict for the last state written to a plugin. The
+  engine re-reads the plugin's LIVE state at +1 / +3 / +10 / +20 s:
+  - `{ status: 'verified' }`, typically within 1–3 s;
+  - `{ status: 'not_applied', errorCode: 'STATE_NOT_APPLIED', appliedBytes?, liveBytes? }`
+    when a large state is still near-empty after ~20 s;
+  - `{ status: 'timeout' }` (default 45 s) or `{ status: 'unsupported' }`.
+    45 s because a part judged late in a long broadcast waits for the writes before it
+    (measured: ≈ 0.55 s × N + 20 s for N 2 MB Kontakt parts, ~28 s at 15).
+  It never rejects. New types `StateApplyVerdict` and `AwaitStateAppliedOptions`,
+  and the constant `STATE_NOT_APPLIED`.
+- **The linked broadcast verifies** (`runLinkedBroadcast`'s new optional
+  `verifyTarget` / `reapplyTarget`; the panel-core sound broadcast and
+  "→ All" use them):
+  - parts are still applied one at a time, and their verdicts are awaited in
+    parallel, so 5 voices take about as long as the slowest one. The broadcast
+    passes `timeoutMs: 45_000` itself (`LINKED_APPLY_VERDICT_TIMEOUT_MS`), so a
+    real miss is never cut short to `timeout` by a host's default;
+  - a part that ignored the state is re-applied ONCE (just the state write,
+    not history or identity), then counts as FAILED and is named in the
+    existing "… applied to some parts only — Skipped: …" notice, in voice order;
+  - other apply errors fail as before, with no retry;
+  - `unknown` (a timeout, an engine that can't tell, a host without the
+    method, a verdict that throws) counts as applied, exactly as before.
+- `PanelSoundAdapter.awaitSoundApplied?` (implemented by
+  `createSurgeSoundAdapter`) maps the host verdict for the track's instrument.
+- The broadcast overlay says "Checking every part loaded it…" while it waits
+  (`GroupBroadcastProgress.phase: 'verifying'`).
+- **Host side:** the engine verdict is sas-engine S-275 and the host method is
+  sas-app S-277. Until a host ships them, nothing changes.
+
 ## 3.21.0 — the instrument library scan, done by the host
 
 Part of the performance work (D-094). The instrument panel scanned the v3 pack
