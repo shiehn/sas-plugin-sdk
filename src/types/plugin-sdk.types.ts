@@ -1123,9 +1123,18 @@ export interface PluginHost {
 
   /**
    * Render a single track to a temporary WAV file and return its path.
-   * Only works on owned tracks. For MIDI/synth tracks the host mutes siblings
-   * and renders the scene. For single-clip audio tracks the host MAY take a
-   * copy-source fast path.
+   * Only works on owned tracks.
+   *
+   * The host renders exactly that one track, as heard, offline: from the
+   * track's OWN scene (not the active one), with that scene's bars and meter,
+   * at the device sample rate, with no normalising or limiting. It never mutes
+   * anything live. (Before sas-app S-258 it muted the siblings live and
+   * rendered the active scene.)
+   *
+   * Renders are serialised: while another render holds the host's render lock
+   * it throws `PluginError('ENGINE_ERROR', …)` with
+   * `details: { reason: 'TRANSITION_RENDER_IN_PROGRESS', retryable: true }` —
+   * busy, not broken; try again once that render finishes.
    * @since SDK 1.2.0
    */
   exportTrackAudio?(trackId: string): Promise<ExportTrackAudioResult>;
@@ -3126,6 +3135,11 @@ export interface ExportTrackAudioResult {
   path: string;
   bpm: number;
   durationMs: number;
+  /**
+   * @deprecated Always undefined: the host no longer takes a copy-source fast
+   * path (sas-app S-258 renders every export the same way). Kept so existing
+   * readers still compile.
+   */
   fromCopyFastPath?: boolean;
 }
 
