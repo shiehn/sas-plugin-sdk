@@ -292,6 +292,7 @@ Six categories in signal chain order: `eq` > `compressor` > `chorus` > `phaser` 
 | `getMusicalContext()` | Key, mode, BPM, bars, genre, chords |
 | `getActiveSceneId()` | Current scene ID (synchronous) |
 | `getSceneList()` | All scenes in the project |
+| `getArrangementOutline?()` | *(3.23.0, optional)* The song order: sections in play order (`sceneId`, `sceneName`, `label?`, `role?`, `startBar`, `bars`, `occurrence`, `instanceId`) plus `pickupBars?`; `null` with no arrangement. Bars are song bars, the first section's downbeat = 1. Helpers: `hasArrangementOutline`, `sectionsOfScene`, `formatSongOrder` |
 
 ### Sample Packs *(status methods since SDK 2.7.0; download/progress since 2.8.0)*
 Versioned sample packs (drums, instruments, the loop/sample library) install on demand under `<userData>/samples/`. A plugin checks install state to decide between its normal UI and a "download library" CTA, then drives the download **through the host** — never `window.electronAPI`.
@@ -379,6 +380,38 @@ The two playback decks: `'loop-a'` (composition / cue, headphones) and `'loop-b'
 | `showOpenDialog/showSaveDialog` | Native file dialogs (requires `fileDialog` capability) |
 | `downloadFile/importFile` | Download/copy files to plugin data directory |
 | `httpRequest(options)` | HTTP requests (requires `network` capability with `allowedHosts`) |
+| `fetchUrlText?(req)` | *(3.23.0, optional)* Read a page or document the USER linked as readable text (see below; requires `urlText` capability, plus the user's consent per origin) |
+
+#### Text from a link *(since SDK 3.23.0)*
+
+For lore, notes or a story the user keeps on the web: `host.fetchUrlText({ url, maxChars?, purpose })`
+resolves `{ ok, reason?, detail?, status?, text?, title?, finalUrl?, contentType?, truncated? }` and
+never rejects for a failed fetch. Declare `"capabilities": { "urlText": true }`; the host then asks
+the user once per plugin and origin (showing your `purpose` line) and remembers the answer.
+
+- One GET, no cookies or credentials, no headers or body from the plugin; `https:` (or `http:`,
+  consented separately and marked unencrypted). Loopback and private-network addresses are refused
+  (`blocked-address`), redirects (at most 5) re-checked, each new origin consented.
+- 2 MB of body, 20 s overall; HTML reduced to its readable text with `<title>` as `title`; a Google
+  Docs link (`docs.google.com/document/d/<id>/…`) read as its plain-text export, so it must be shared
+  "anyone with the link"; `text` capped at `min(maxChars, 200 000)` with `truncated: true`.
+- Reasons: `capability-denied`, `invalid-url`, `unsupported-scheme`, `blocked-address`, `denied`,
+  `too-many-redirects`, `timeout`, `network`, `http-error` (with `status`), `not-text`, `too-large`
+  (`URL_TEXT_FAILURE_REASONS`).
+
+```typescript
+import { hasUrlText, describeUrlTextFailure } from '@signalsandsorcery/plugin-sdk';
+
+if (hasUrlText(host)) {
+  const r = await host.fetchUrlText({ url, maxChars: 20_000, purpose: 'Use this page as the lyric context' });
+  if (r.ok) saveLore(r.text ?? '');
+  else showNote(describeUrlTextFailure(r, url));
+}
+```
+
+Helpers: `URL_TEXT_LIMITS`, `clampUrlTextChars`, `googleDocsExportUrl`, `isUrlTextContentType` and
+`htmlToReadableText`, also importable without React from `@signalsandsorcery/plugin-sdk/url-text`
+(the host uses them). For an API your plugin calls, use `httpRequest` with `allowedHosts` instead.
 
 ### Secure Storage
 | Method | Description |
@@ -430,6 +463,7 @@ All errors are `PluginError` instances with a typed `code` property:
 
 - **Ownership scoping** — Plugins can only modify tracks they created (enforced at runtime)
 - **Capability gating** — Network and file system access require manifest declarations
+- **Consent per origin** — `fetchUrlText` reads only links the user allows, per plugin and origin, never from local or private-network addresses
 - **Secret isolation** — Each plugin's secrets are encrypted and scoped per plugin
 - **Track limits** — 16 tracks per plugin per scene (configurable)
 

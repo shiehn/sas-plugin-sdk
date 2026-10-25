@@ -1444,6 +1444,23 @@ export interface PluginHost {
   getSceneList(): Promise<PluginSceneInfo[]>;
 
   /**
+   * The song order: the project's arrangement as a list of sections, in play
+   * order, each one an occurrence of a scene. A plugin writing for one scene
+   * learns where it sits in the song ("the second chorus, after the bridge").
+   *
+   * Bars are SONG bars, 1-based: the first section's downbeat is bar 1. Pickup
+   * bars (arrangement contract 0.14.0) come before it, are not a section, and
+   * are counted in `pickupBars`; they play the last bars of the first section's
+   * scene.
+   *
+   * Resolves `null` when no project is bound or the project has no
+   * arrangement yet, and `{ sections: [] }` for an arrangement with nothing
+   * placed. Read-only; no capability needed. Optional: feature-check.
+   * @since SDK 3.23.0
+   */
+  getArrangementOutline?(): Promise<ArrangementOutline | null>;
+
+  /**
    * Enumerate importable track candidates from OTHER scenes, scoped to this
    * plugin's track type (derived from the plugin id). Each candidate is
    * annotated with `importable` + `disabledReason` — the host computes the
@@ -2306,6 +2323,43 @@ export interface PluginHost {
    * @since SDK 3.15.0
    */
   automateExternalApp?(request: ExternalAppRequest): Promise<ExternalAppResult>;
+
+  // --- Text from a link (@since SDK 3.23.0, capability- and consent-gated) ---
+
+  /**
+   * Fetch a web page or document the USER pasted and return it as readable
+   * text: lore, lyrics notes, a story bible. Read-only and narrow on purpose:
+   * one GET, no cookies or credentials, no request headers or body from the
+   * plugin. For an API a plugin talks to, use `httpRequest` with
+   * `capabilities.network.allowedHosts` instead.
+   *
+   * Gates, in order (each failure resolves `{ ok: false, reason }`):
+   * - the manifest declares `capabilities.urlText: true`, else `capability-denied`;
+   * - `url` parses (`invalid-url`) and is `https:`, or `http:` (`unsupported-scheme`
+   *   for anything else; `http:` is consented separately and marked unencrypted);
+   * - the host and every redirect target are public addresses: loopback, private,
+   *   link-local and other non-public ranges are refused after DNS resolution
+   *   (`blocked-address`);
+   * - the user allows this plugin to read from this host. The host asks once per
+   *   plugin and origin (scheme, hostname, port) and remembers the answer; a refusal
+   *   or a dismissed prompt is `denied`. `purpose` is the plugin's one-line reason,
+   *   shown in that prompt. A redirect to another origin needs its own consent.
+   *
+   * Then: at most {@link URL_TEXT_LIMITS}.maxRedirects redirects (`too-many-redirects`),
+   * {@link URL_TEXT_LIMITS}.maxBytes of body (`too-large`), {@link URL_TEXT_LIMITS}.timeoutMs
+   * overall (`timeout`); a non-2xx final status is `http-error` with `status`;
+   * a body that is not text (`text/*`, HTML, XHTML, JSON, XML) is `not-text`.
+   * HTML is reduced to its readable text (scripts, styles and page chrome
+   * dropped, `<title>` returned as `title`); a Google Doc link
+   * (`docs.google.com/document/d/<id>/…`) is fetched as its plain-text export
+   * (see `googleDocsExportUrl`). `text` is capped at `min(maxChars, 200 000)`
+   * characters with `truncated: true`.
+   *
+   * Never rejects for these outcomes: read `ok` and `reason`. Optional: probe it
+   * (`hasUrlText(host)`) and hide the link affordance when absent.
+   * @since SDK 3.23.0
+   */
+  fetchUrlText?(request: UrlTextRequest): Promise<UrlTextResult>;
 
   // --- Network (Phase 2, capability-gated) ---
 
@@ -3974,6 +4028,13 @@ export interface PluginCapabilities {
    * @since SDK 3.15.0
    */
   externalApps?: string[];
+  /**
+   * Plugin may call `fetchUrlText` to read a page or document the user links.
+   * Every origin still needs the user's consent, per plugin, remembered by the
+   * host; the declaration only lets the plugin ask.
+   * @since SDK 3.23.0
+   */
+  urlText?: boolean;
 }
 
 // ============================================================================
@@ -4130,6 +4191,93 @@ export interface ExternalAppResult {
   reason?: string;
   /** Human-readable detail for the reason. */
   detail?: string;
+}
+
+// ============================================================================
+// Text from a link (since SDK 3.23.0)
+// ============================================================================
+
+/** One `PluginHost.fetchUrlText` request. @since SDK 3.23.0 */
+export interface UrlTextRequest {
+  /** The link the user gave: `https:` (or `http:`, consented separately). */
+  url: string;
+  /** Upper bound on returned characters; the host clamps it to 200 000. */
+  maxChars?: number;
+  /** One line shown in the host's consent prompt, e.g. "Use this page as the lyric context". */
+  purpose: string;
+}
+
+/** Why `fetchUrlText` returned no text. @since SDK 3.23.0 */
+export type UrlTextFailureReason =
+  /** The manifest does not declare `capabilities.urlText`. */
+  | 'capability-denied'
+  /** The user refused, or dismissed, consent for this plugin and origin. */
+  | 'denied'
+  | 'invalid-url'
+  /** Not `https:` or `http:`. */
+  | 'unsupported-scheme'
+  /** The host or a redirect resolves to a loopback, private, link-local or otherwise non-public address. */
+  | 'blocked-address'
+  | 'too-many-redirects'
+  /** The body is not text (an image, a PDF, a binary). */
+  | 'not-text'
+  /** The body passed the byte cap. */
+  | 'too-large'
+  /** The final response was not 2xx; see `status`. */
+  | 'http-error'
+  | 'timeout'
+  /** DNS, TLS or connection failure. */
+  | 'network';
+
+/** Outcome of `PluginHost.fetchUrlText`. @since SDK 3.23.0 */
+export interface UrlTextResult {
+  ok: boolean;
+  /** When !ok. */
+  reason?: UrlTextFailureReason;
+  /** Human-readable detail for the reason (never needed to branch on). */
+  detail?: string;
+  /** The final HTTP status, when a response arrived. */
+  status?: number;
+  /** Readable text: HTML reduced to its text, a Google Doc as its plain-text export. */
+  text?: string;
+  /** The page's `<title>`, when it has one. */
+  title?: string;
+  /** The URL after redirects (and after the Google Docs export rewrite). */
+  finalUrl?: string;
+  /** The response's media type, without parameters (e.g. `text/html`). */
+  contentType?: string;
+  /** `text` was cut at the character cap. */
+  truncated?: boolean;
+}
+
+// ============================================================================
+// Arrangement outline (since SDK 3.23.0)
+// ============================================================================
+
+/** One section of the song: one occurrence of a scene. @since SDK 3.23.0 */
+export interface ArrangementOutlineSection {
+  /** This occurrence's id in the arrangement (stable while the section stays placed). */
+  instanceId: string;
+  sceneId: string;
+  sceneName: string;
+  /** The user's name for this section in the arrangement ("Chorus", "Verse 2"), when set. */
+  label?: string;
+  /** Its song-form role (intro, verse, chorus, bridge, drop …), lower-case, when the arrangement carries one; hosts never guess it from names. */
+  role?: string;
+  /** First song bar, 1-based (the first section starts at 1). */
+  startBar: number;
+  /** Length in bars. */
+  bars: number;
+  /** 1-based: which time this scene plays in the song (the 2nd chorus = 2). */
+  occurrence: number;
+}
+
+/** The song order from `PluginHost.getArrangementOutline`. @since SDK 3.23.0 */
+export interface ArrangementOutline {
+  /** In play order. */
+  sections: ArrangementOutlineSection[];
+  /** Bars before bar 1 that lead in to the first section (contract 0.14.0); absent or 0 when none. */
+  pickupBars?: number;
 }
 
 // ============================================================================

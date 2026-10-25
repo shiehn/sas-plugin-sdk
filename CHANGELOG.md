@@ -4,6 +4,40 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.23.0 — Text from a link, and the song order
+
+For Synth V lyrics (S-395, D-186/D-187): the user gives the song's lore as a link
+or a text dump, and a section's lyrics should know where the section sits in the
+song. Two optional host methods, both additive; no plugin needs a
+`minHostVersion` bump unless it calls them without a feature check. (The
+Chat-to-DAW `declareCommands` earmarked for 3.23 moves to the next minor.)
+
+- **`PluginHost.fetchUrlText?(req)`** reads a page or document the user linked
+  and returns readable text: `{ url, maxChars?, purpose }` →
+  `{ ok, reason?, detail?, status?, text?, title?, finalUrl?, contentType?, truncated? }`.
+  Never rejects for a failed fetch. New manifest capability
+  `capabilities.urlText: true`; the host asks the user once per plugin and origin
+  and remembers the answer (`denied` otherwise). One GET, no cookies or
+  credentials; `https:` (or `http:`, consented separately); loopback, private and
+  link-local addresses refused (`blocked-address`), redirects (≤ 5) re-checked;
+  2 MB body, 20 s; HTML reduced to text; Google Docs links read as their
+  plain-text export; `text` ≤ `min(maxChars, 200 000)`.
+  Types `UrlTextRequest`, `UrlTextResult`, `UrlTextFailureReason`.
+- **`PluginHost.getArrangementOutline?()`** → `{ sections, pickupBars? } | null`:
+  the project's arrangement in play order, each section
+  `{ instanceId, sceneId, sceneName, label?, role?, startBar, bars, occurrence }`.
+  Song bars, 1-based from the first section's downbeat; pickup bars (contract
+  0.14.0) are not a section. `role` only when the arrangement carries one (hosts
+  never guess it from names); `label` is the user's own section name. Types
+  `ArrangementOutline`, `ArrangementOutlineSection`.
+- **Helpers**: `hasUrlText`, `describeUrlTextFailure`, `URL_TEXT_LIMITS`,
+  `URL_TEXT_FAILURE_REASONS`, `clampUrlTextChars`, `googleDocsExportUrl`,
+  `isUrlTextContentType`, `htmlToReadableText`; `hasArrangementOutline`,
+  `sectionsOfScene`, `formatSongOrder`.
+- **New subpath** `@signalsandsorcery/plugin-sdk/url-text`: the url-text helpers
+  without React, for the host's main process (`typesVersions` covers
+  `moduleResolution: node`).
+
 ## 3.22.0 — "→ All" checks every part actually loaded the sound
 
 S-273 found an ensemble whose Kontakt patch, sent to 5 voices with "→ All",

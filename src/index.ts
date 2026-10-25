@@ -124,6 +124,11 @@ export type {
   ExternalAppPlatform,
   ExternalAppRequest,
   ExternalAppResult,
+  UrlTextRequest,
+  UrlTextResult,
+  UrlTextFailureReason,
+  ArrangementOutline,
+  ArrangementOutlineSection,
   PluginHttpRequestOptions,
   PluginHttpResponse,
   PluginCredentialState,
@@ -398,6 +403,19 @@ export type { LLMModelRole } from './constants/llm-models';
 
 export { sliderToDb, dbToSlider, SLIDER_UNITY, DB_MAX, DB_MIN } from './utils/volume-conversion';
 export { formatConcurrentTracks } from './utils/format-concurrent-tracks';
+// Text from a link + song order (SDK 3.23.0). The url-text helpers are also
+// the React-free subpath `@signalsandsorcery/plugin-sdk/url-text` for the host.
+export {
+  URL_TEXT_LIMITS,
+  URL_TEXT_FAILURE_REASONS,
+  clampUrlTextChars,
+  hasUrlText,
+  googleDocsExportUrl,
+  isUrlTextContentType,
+  htmlToReadableText,
+  describeUrlTextFailure,
+} from './utils/url-text';
+export { hasArrangementOutline, sectionsOfScene, formatSongOrder } from './utils/arrangement-outline';
 export {
   formatMusicalContext,
   type FormatMusicalContextOptions,

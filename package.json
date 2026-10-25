@@ -1,6 +1,6 @@
 {
   "name": "@signalsandsorcery/plugin-sdk",
-  "version": "3.22.2",
+  "version": "3.23.0",
   "description": "Plugin SDK for Signals & Sorcery — types, components, and hooks for building generator plugins",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -10,6 +10,18 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./url-text": {
+      "types": "./dist/url-text.d.ts",
+      "import": "./dist/url-text.mjs",
+      "require": "./dist/url-text.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "url-text": [
+        "./dist/url-text.d.ts"
+      ]
     }
   },
   "files": [
