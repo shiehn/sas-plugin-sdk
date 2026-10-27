@@ -4,6 +4,74 @@ Versions below are SDK **contract** versions (`PLUGIN_SDK_VERSION`), which the
 npm package version now tracks 1:1 (they historically diverged; converged at
 2.49.0). This file starts at 2.46.0 — earlier history lives in git log.
 
+## 3.24.0 — Song lyrics: the words belong to the arrangement
+
+For song-level lyrics (S-406 design, S-407, D-206): one host-owned lyric
+document per arrangement, keyed by section placement, which the arrangement
+row's Lyrics tab, the agent and vocal plugins share. Four optional host methods,
+all additive; feature-check with `hasSongLyrics`. (Chat-to-DAW `declareCommands`
+moves to 3.25.)
+
+- **`PluginHost.getSongLyrics?()`** → `SongLyrics | null`:
+  `{ version: 1, arrangementId, description, sections, spare, updatedAt }`,
+  `sections` keyed by the outline's `instanceId`, each
+  `{ sceneId, voiceTrackDbId, role?, lines, locks, hints, sameAs?, take?, renderedSig?, writtenAt? }`.
+- **`PluginHost.setSectionLyrics?(instanceId, patch)`**: present fields
+  change, `null` clears. Creates the document and the section on first write.
+  `sameAs` repeats a placement of the same scene (lines mirrored, rewrites
+  carried to every repeat, no loops). `voiceTrackDbId` must be a track the
+  plugin owns, and another plugin's section is not writable (`NOT_OWNED`).
+  Other refusals are `VALIDATION_ERROR` with `details.reason`
+  (`SongLyricsWriteFailure`). Unknown patch fields are refused.
+- **`PluginHost.setSongDescription?(text)`** and
+  **`PluginHost.onSongLyricsChanged?(listener)`**:
+  `(doc | null, change?: { instanceIds?, description?, byPluginId? })`.
+- **Types**: `SongLyrics`, `SongLyricsSection`, `SongLyricsSectionPatch`,
+  `SongLyricsSpareVerse`, `SongLyricsHint`, `SongLyricsChange`,
+  `SongLyricsWriteFailure`, and `SongRole`, which is free text with suggested
+  values, not an enum.
+- **Helpers**: `hasSongLyrics`, `songLyricsInOrder`, `resolveSectionLines`,
+  `songLinesSignature` + `isSectionTakeStale` (the shared staleness rule for
+  `renderedSig`), `applySongLyricsPatch` / `applySongDescription` (the pure
+  write rules hosts run), `emptySongLyrics`, `emptySongLyricsSection`,
+  `SONG_LYRICS_LIMITS`, `SONG_LYRICS_WRITE_FAILURES`, `SONG_LYRICS_PATCH_KEYS`,
+  `SONG_ROLE_SUGGESTIONS`, `SONG_LYRICS_VERSION`.
+- **Test host**: `createSongLyricsTestHost(options)`, an in-memory host with
+  the same rules and ownership, for plugin tests.
+- **New subpath** `@signalsandsorcery/plugin-sdk/song-lyrics`: the pure helpers
+  and the document types without React, for the host's main process. The 3.23.0
+  `url-text` subpath is unchanged.
+
+Also in 3.24.0, for reading the groove of audio (S-411, D-210/D-212):
+
+- **`PluginHost.readTrackOnsets?(trackDbId, { maxCount? })`** →
+  `TrackOnsets | null`: `{ source: 'audio', sampleRate, durationSec, bpm, onsets, truncated }`,
+  each onset `{ timeSec, beat, strength }` over one pass of the track's scene
+  loop, from the scene's first downbeat (`beat` in quarter-notes at `bpm`,
+  `strength` 0..1 relative to the loudest hit). Any track of the project, read
+  as heard; read-only and not ownership-gated, like `readImportableTrackMidi`.
+  `null` for no project, an unknown track or nothing to measure; a silent track
+  is `onsets: []`. Past `maxCount` (default 512, at most 4096) the strongest
+  stay. A bad `maxCount` rejects with `VALIDATION_ERROR`.
+- **Busy**: when the host can't measure now, an uncached read rejects with
+  `ENGINE_ERROR` and `details: { retryable: true, reason }`. `reason` is
+  `'TRANSPORT_PLAYING'` (retry when the transport stops) or
+  `'TRANSITION_RENDER_IN_PROGRESS'` (retry when that render finishes).
+- **`PluginHost.listSceneAudioTracks?()`** → `SceneAudioTrackSummary[]` (S-413):
+  the active scene's sample and audio tracks,
+  `{ dbId, name, kind: 'sample' | 'audio', pluginId?, category?, tags?, description? }`,
+  so a plugin can find a drum loop and read it. `listSceneTracks()` is
+  unchanged: it still lists MIDI tracks only. Feature-check with
+  `hasSceneAudioTracks`.
+- **Types**: `ReadTrackOnsetsOptions`, `TrackOnset`, `TrackOnsets`, `TrackOnsetsBusyReason`,
+  `SceneAudioTrackSummary`.
+- **Helpers**: `hasTrackOnsets`, `hasSceneAudioTracks`, `resolveTrackOnsetsMaxCount`, `TRACK_ONSETS_LIMITS`,
+  `TRACK_ONSETS_BUSY_REASONS`,
+  and `finishTrackOnsets` (+ `RawTrackOnsets`), the pure step hosts run on a
+  detector's output (range, merge, cap, scale, beats).
+- **New subpath** `@signalsandsorcery/plugin-sdk/track-onsets`: the helpers and
+  types without React, for the host.
+
 ## 3.23.0 — Text from a link, and the song order
 
 For Synth V lyrics (S-395, D-186/D-187): the user gives the song's lore as a link

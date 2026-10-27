@@ -1460,6 +1460,70 @@ export interface PluginHost {
    */
   getArrangementOutline?(): Promise<ArrangementOutline | null>;
 
+  // --- Song lyrics (since SDK 3.24.0; all optional, feature-check with `hasSongLyrics`) ---
+
+  /**
+   * The song's words: the bound arrangement's lyric document, one section per
+   * placement keyed by `instanceId` (the outline's id), plus the song
+   * description and the verses that lost their placement (`spare`). The host
+   * owns the document; the tab in the arrangement row, the agent and plugins
+   * all read and write this one copy.
+   *
+   * Sections have no order of their own: walk `getArrangementOutline()` for the
+   * song order (`songLyricsInOrder`). A placed section the document doesn't
+   * hold yet reads as empty. A section with `sameAs` sings that section's
+   * words; the host keeps its `lines` a copy of them.
+   *
+   * Resolves `null` when no project is bound, the project has no arrangement,
+   * or nothing has been written yet. Read-only; no capability needed.
+   * @since SDK 3.24.0
+   */
+  getSongLyrics?(): Promise<SongLyrics | null>;
+
+  /**
+   * Write one section's words, locks, hints, role, repeat, take or vocal
+   * reading. Only the fields present in `patch` change; `null` clears an
+   * optional field. Creates the document, and the section, on first write.
+   * Rules (the pure half is `applySongLyricsPatch`, which hosts run too):
+   * - `instanceId` must be placed in the bound arrangement.
+   * - `lines`: one string per phrase, no line breaks, within
+   *   `SONG_LYRICS_LIMITS`. Refused while the section has `sameAs`, unless
+   *   the same patch clears it.
+   * - `locks`: line indexes; out-of-range ones are dropped.
+   * - `hints`: the whole thread. The host keeps the latest
+   *   `maxHintsPerSection` and cuts each text to `maxHintChars`.
+   * - `role`: free text, stored lower-case and trimmed (see `SongRole`).
+   * - `sameAs`: another placement of the SAME scene, with no cycle. The
+   *   section then mirrors its lines.
+   * - `voiceTrackDbId`: must be a track this plugin owns (`NOT_OWNED`
+   *   otherwise). A section already claimed by another plugin's track,
+   *   while that track exists, can't be written at all (`NOT_OWNED`).
+   *
+   * Rejects with `PluginError('NOT_OWNED')` for an ownership refusal and with
+   * `PluginError('VALIDATION_ERROR', …, { reason })` for anything else, where
+   * `reason` is a `SongLyricsWriteFailure`. Fires `onSongLyricsChanged` on success.
+   * @since SDK 3.24.0
+   */
+  setSectionLyrics?(instanceId: string, patch: SongLyricsSectionPatch): Promise<void>;
+
+  /**
+   * Set the song's one description ("a late-night confession, hopeful by the
+   * end"); `''` clears it. At most `SONG_LYRICS_LIMITS.maxDescriptionChars`,
+   * trimmed. Rejects like `setSectionLyrics` (`no-arrangement`, `too-long`).
+   * @since SDK 3.24.0
+   */
+  setSongDescription?(description: string): Promise<void>;
+
+  /**
+   * Called after ANY writer changes the document: the Lyrics tab, the agent,
+   * another plugin, or this one. `doc` is the whole new document. It is
+   * `null` when the bound project changes to one without a document.
+   * `change` says what moved, when the host knows it; every field is optional.
+   * Returns an unsubscribe function.
+   * @since SDK 3.24.0
+   */
+  onSongLyricsChanged?(listener: (doc: SongLyrics | null, change?: SongLyricsChange) => void): UnsubscribeFn;
+
   /**
    * Enumerate importable track candidates from OTHER scenes, scoped to this
    * plugin's track type (derived from the plugin id). Each candidate is
@@ -1512,6 +1576,48 @@ export interface PluginHost {
   readImportableTrackMidi?(sourceTrackDbId: string): Promise<ReadMidiResult>;
 
   /**
+   * Where a track's hits land: onsets measured from the track's AUDIO as heard
+   * in its scene (an audio loop, a frozen track, a rendered drum lane), for a
+   * plugin that needs the groove a MIDI read can't see, e.g. the backbeat of a
+   * drum loop. The selector is any track DB id in the bound project
+   * (`SceneTrackSummary.dbId`, `SceneAudioTrackSummary.dbId`,
+   * `ImportCandidateTrack.dbId`).
+   *
+   * One pass of the track's scene loop: `timeSec` 0 is the scene's first
+   * downbeat, `beat` counts quarter-notes from there at `bpm`, and clip
+   * offset, stretch and the loop span are already applied. `strength` is
+   * relative, 0..1, with the loudest hit of this reading at 1. Onsets come in
+   * time order; past `maxCount` the strongest are kept (`truncated`).
+   *
+   * Like `readImportableTrackMidi`, read-only and NOT ownership-gated: no
+   * capability needed. Resolves `null` when no project is bound, the id is
+   * not a track of this project, or the track has no sound to measure. A
+   * silent track reads as `onsets: []`. Rejects with
+   * `PluginError('VALIDATION_ERROR')` for a bad `maxCount`, or with
+   * `TIMEOUT` / `ENGINE_ERROR` when the measurement fails.
+   *
+   * Cost and busy: the host caches a reading until the track's sound changes,
+   * and reads a fresh freeze stem directly, without a render. Any other
+   * uncached read bounces the track. When it can't bounce now, an uncached
+   * read takes no lock and rejects with `PluginError('ENGINE_ERROR', …)` and
+   * `details: { retryable: true, reason }`, where `reason` is a
+   * `TrackOnsetsBusyReason`. This means busy, not broken:
+   * - `'TRANSPORT_PLAYING'`: the transport is playing. Retry once it stops.
+   * - `'TRANSITION_RENDER_IN_PROGRESS'`: another render holds the render
+   *   lock. Retry once it finishes.
+   * Key on `retryable` in general, and on `reason` to wait for the right
+   * moment. Otherwise go on without this track's evidence.
+   *
+   * Reading the hits: one drum hit can yield more than one onset. Synth kicks,
+   * for example, give a secondary onset about 0.25 beat after each hit (the
+   * body or tail) at a lower strength. Weight onsets by `strength` and merge
+   * near-duplicates before counting hits. Optional: feature-check with
+   * `hasTrackOnsets`.
+   * @since SDK 3.24.0
+   */
+  readTrackOnsets?(trackDbId: string, opts?: ReadTrackOnsetsOptions): Promise<TrackOnsets | null>;
+
+  /**
    * List THIS panel's family tracks in a specific scene (by DB id), WITHOUT the
    * import key/length/tempo gate that `listImportableTracks` applies. Powers the
    * crossfade picker: the origin (from) and target (to) scenes of a transition
@@ -1530,8 +1636,29 @@ export interface PluginHost {
    * the returned `dbId`s feed `PluginGenerationContextOptions.pinTrackDbIds`.
    * Returns [] when no project/scene is bound. Optional — callers MUST
    * null-check (see `listImportableTracks`). @since SDK 2.42.0
+   *
+   * Lists the scene's MIDI/instrument tracks (the `tracks` table) only. For
+   * its sample and audio tracks (loops, imported or recorded audio), see
+   * `listSceneAudioTracks`.
    */
   listSceneTracks?(): Promise<SceneTrackSummary[]>;
+
+  /**
+   * The ACTIVE scene's sample and audio tracks: loops from the sample
+   * library (`kind: 'sample'`) and imported or recorded audio
+   * (`kind: 'audio'`). These are the tracks `listSceneTracks` leaves out.
+   * Together the two calls list every track in the scene.
+   *
+   * Unfiltered by plugin family or ownership, and read-only. `name` is for
+   * display only; use `dbId` for any lookup. A `dbId` feeds
+   * `readTrackOnsets`, which reads where the track's hits land. There is no
+   * MIDI to read: `readImportableTrackMidi` doesn't apply to these tracks.
+   *
+   * Returns [] when no project or scene is bound. Optional: feature-check
+   * with `hasSceneAudioTracks`.
+   * @since SDK 3.24.0
+   */
+  listSceneAudioTracks?(): Promise<SceneAudioTrackSummary[]>;
 
   /**
    * Read a specific scene's musical key (tonic + mode) by db id. Labels the
@@ -2972,6 +3099,31 @@ export interface SceneTrackSummary {
 }
 
 /**
+ * One sample or audio track in the ACTIVE scene, returned by
+ * `host.listSceneAudioTracks`.
+ * @since SDK 3.24.0
+ */
+export interface SceneAudioTrackSummary {
+  /** Stable DB row id (`sample_tracks.id` or `audio_tracks.id`). */
+  dbId: string;
+  /** Display name. Never use it as an identifier. */
+  name: string;
+  /**
+   * `'sample'`: a loop or one-shot from the sample library.
+   * `'audio'`: imported, recorded or generated audio.
+   */
+  kind: 'sample' | 'audio';
+  /** The panel that made the track, when stamped. */
+  pluginId?: string;
+  /** For a sample: its library category, as stored (e.g. a pack's folder). */
+  category?: string;
+  /** For a sample: its library tags, as stored. */
+  tags?: string[];
+  /** For audio: the stored description, when there is one. */
+  description?: string;
+}
+
+/**
  * A source track's current sound, as returned by `host.getTrackSound`. The
  * discriminant matches the panel that reads it: drums → 'sample', instruments →
  * 'instrument', synths → 'preset'. `label` is the human name for the History row.
@@ -3161,6 +3313,56 @@ export interface ReadMidiClip {
 export interface ReadMidiResult {
   clips: ReadMidiClip[];
 }
+
+/**
+ * Options for {@link PluginHost.readTrackOnsets}.
+ * @since SDK 3.24.0
+ */
+export interface ReadTrackOnsetsOptions {
+  /**
+   * Keep at most this many onsets (the strongest), an integer from 1 to
+   * `TRACK_ONSETS_LIMITS.maxCount`. Default `TRACK_ONSETS_LIMITS.defaultMaxCount`.
+   */
+  maxCount?: number;
+}
+
+/** One hit in a {@link TrackOnsets} reading. @since SDK 3.24.0 */
+export interface TrackOnset {
+  /** Seconds from the scene's first downbeat. */
+  timeSec: number;
+  /** Quarter-notes from the scene's first downbeat (`timeSec * bpm / 60`). */
+  beat: number;
+  /** Relative strength, 0..1: the loudest hit of the reading is 1. */
+  strength: number;
+}
+
+/**
+ * Result of {@link PluginHost.readTrackOnsets}: one pass of the track's scene
+ * loop, measured from audio.
+ * @since SDK 3.24.0
+ */
+export interface TrackOnsets {
+  /** How the onsets were found. Only `'audio'` today; a reader should ignore other values. */
+  source: 'audio';
+  /** Sample rate of the measured audio. */
+  sampleRate: number;
+  /** Length of the measured span (one scene loop), in seconds. */
+  durationSec: number;
+  /** The scene tempo `beat` was counted at. */
+  bpm: number;
+  /** In time order. */
+  onsets: TrackOnset[];
+  /** True when more than `maxCount` onsets were found and the weakest were dropped. */
+  truncated: boolean;
+}
+
+/**
+ * `details.reason` of a busy `readTrackOnsets` rejection
+ * (`PluginError('ENGINE_ERROR')`, `details.retryable: true`). The list is
+ * `TRACK_ONSETS_BUSY_REASONS`.
+ * @since SDK 3.24.0
+ */
+export type TrackOnsetsBusyReason = 'TRANSPORT_PLAYING' | 'TRANSITION_RENDER_IN_PROGRESS';
 
 /**
  * Options for {@link PluginHost.exportTracksAsMidiBundle}.
@@ -4278,6 +4480,119 @@ export interface ArrangementOutline {
   sections: ArrangementOutlineSection[];
   /** Bars before bar 1 that lead in to the first section (contract 0.14.0); absent or 0 when none. */
   pickupBars?: number;
+}
+
+// ============================================================================
+// Song lyrics (since SDK 3.24.0)
+// ============================================================================
+
+/**
+ * A section's song-form role, the model's (or the user's) reading of its
+ * label and position. Free text: the suggestions are the common forms, not a
+ * closed list, and hosts and plugins never derive a role from a label in code.
+ * Stored lower-case. @since SDK 3.24.0
+ */
+export type SongRole =
+  | 'intro'
+  | 'verse'
+  | 'pre-chorus'
+  | 'chorus'
+  | 'post-chorus'
+  | 'hook'
+  | 'refrain'
+  | 'bridge'
+  | 'breakdown'
+  | 'build'
+  | 'drop'
+  | 'interlude'
+  | 'solo'
+  | 'outro'
+  | (string & {});
+
+/** One turn of a section's words chat. @since SDK 3.24.0 */
+export interface SongLyricsHint {
+  role: 'user' | 'model';
+  text: string;
+  /** Epoch ms. */
+  at: number;
+}
+
+/** The words of one placement (one arrangement instance). @since SDK 3.24.0 */
+export interface SongLyricsSection {
+  sceneId: string;
+  /** The vocal reading's anchor track (DB id) that sings here; `null` = instrumental or not claimed yet. */
+  voiceTrackDbId: string | null;
+  role?: SongRole;
+  /** The words sung in THIS placement, one line per phrase. */
+  lines: string[];
+  /** Locked line indexes, ascending. */
+  locks: number[];
+  /** This section's words chat, oldest first. */
+  hints: SongLyricsHint[];
+  /** Sings the words of that placement (same scene); `lines` mirrors it. */
+  sameAs?: string;
+  /** 0-based take in the reading's alternatives group, once rendered. */
+  take?: number;
+  /** The plugin's signature of the lines its last render sang; `lines` moving past it = the take is stale. */
+  renderedSig?: string;
+  /** Epoch ms of the last change to `lines`. */
+  writtenAt?: number;
+}
+
+/** Words with no placement: a section whose placement was removed, or an extra verse. @since SDK 3.24.0 */
+export interface SongLyricsSpareVerse {
+  sceneId: string;
+  voiceTrackDbId: string | null;
+  lines: string[];
+  /** The removed placement's instanceId, when it came from one. */
+  from?: string;
+}
+
+/** The song lyric document: one per arrangement, host-owned. @since SDK 3.24.0 */
+export interface SongLyrics {
+  version: 1;
+  arrangementId: string;
+  /** The one song description; '' when none. */
+  description: string;
+  /** By `instanceId`. Order comes from the arrangement outline. */
+  sections: Record<string, SongLyricsSection>;
+  spare: SongLyricsSpareVerse[];
+  /** Epoch ms. */
+  updatedAt: number;
+}
+
+/** `setSectionLyrics`' patch: present fields change, `null` clears. @since SDK 3.24.0 */
+export interface SongLyricsSectionPatch {
+  lines?: string[];
+  locks?: number[];
+  hints?: SongLyricsHint[];
+  role?: SongRole | null;
+  sameAs?: string | null;
+  take?: number | null;
+  renderedSig?: string | null;
+  voiceTrackDbId?: string | null;
+}
+
+/** Why a song-lyrics write was refused (`PluginError` details `reason`). @since SDK 3.24.0 */
+export type SongLyricsWriteFailure =
+  | 'no-arrangement'      // no project bound, or it has no arrangement
+  | 'unknown-section'     // instanceId not placed in the bound arrangement
+  | 'invalid-patch'       // wrong type, unknown field, line break in a line
+  | 'too-long'            // over a SONG_LYRICS_LIMITS cap that is not trimmed
+  | 'same-as-lines'       // lines written to a section that repeats another
+  | 'same-as-unknown'     // sameAs names no placement, or itself
+  | 'same-as-other-scene' // sameAs names a placement of another scene
+  | 'same-as-cycle'       // sameAs would loop
+  | 'not-owned';          // voiceTrackDbId not this plugin's, or the section is claimed by another plugin (code NOT_OWNED)
+
+/** What an `onSongLyricsChanged` call changed, when the host knows. @since SDK 3.24.0 */
+export interface SongLyricsChange {
+  /** The sections written (mirrors of a written section included). */
+  instanceIds?: string[];
+  /** The description changed. */
+  description?: boolean;
+  /** The writing plugin's id; absent for the host's own writers (the tab, the agent, arrangement edits). */
+  byPluginId?: string;
 }
 
 // ============================================================================

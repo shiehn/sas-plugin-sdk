@@ -294,6 +294,98 @@ Six categories in signal chain order: `eq` > `compressor` > `chorus` > `phaser` 
 | `getSceneList()` | All scenes in the project |
 | `getArrangementOutline?()` | *(3.23.0, optional)* The song order: sections in play order (`sceneId`, `sceneName`, `label?`, `role?`, `startBar`, `bars`, `occurrence`, `instanceId`) plus `pickupBars?`; `null` with no arrangement. Bars are song bars, the first section's downbeat = 1. Helpers: `hasArrangementOutline`, `sectionsOfScene`, `formatSongOrder` |
 
+### Song Lyrics *(since SDK 3.24.0; all optional, feature-check with `hasSongLyrics`)*
+The song's words belong to the arrangement. The host keeps one **song lyric document** per
+arrangement: a section of words per placement, keyed by the outline's `instanceId`, plus the song's
+description. The arrangement row's Lyrics tab, the agent and vocal plugins all read and write that one copy.
+
+| Method | Description |
+|--------|-------------|
+| `getSongLyrics?()` | The document `{ version: 1, arrangementId, description, sections: { [instanceId]: SongLyricsSection }, spare, updatedAt }`; `null` with no arrangement or nothing written |
+| `setSectionLyrics?(instanceId, patch)` | Write one section; present fields change, `null` clears: `lines`, `locks`, `hints`, `role`, `sameAs`, `take`, `renderedSig`, `voiceTrackDbId` |
+| `setSongDescription?(text)` | The song's one description (`''` clears) |
+| `onSongLyricsChanged?(listener)` | `(doc, change?) => void` after any writer; `doc` is `null` when the project changes to one without a document; returns unsubscribe |
+
+- A section is `{ sceneId, voiceTrackDbId, role?, lines, locks, hints, sameAs?, take?, renderedSig?, writtenAt? }`:
+  one line per sung phrase. `role` is free text (`SongRole`; `SONG_ROLE_SUGGESTIONS` lists the common
+  forms) read by the model from the section's label and position. Code never derives it from a word list.
+- `sameAs` makes a section repeat another placement **of the same scene** (a chorus): its `lines`
+  mirror that section, a rewrite reaches every repeat, and writing its own `lines` needs `sameAs: null`
+  in the same patch.
+- `voiceTrackDbId` claims a section for your vocal reading. It must be a track you own, and a
+  section another plugin's track sings is not yours to write (`NOT_OWNED`).
+- After a render, store `take` and `renderedSig: songLinesSignature(linesYouSang)`;
+  `isSectionTakeStale(doc, instanceId)` then tells anyone (the Lyrics tab too) that the take is stale.
+- Refusals reject with `PluginError` `VALIDATION_ERROR` and `details.reason`
+  (`SONG_LYRICS_WRITE_FAILURES`), or `NOT_OWNED`. Caps: `SONG_LYRICS_LIMITS` (64 lines × 300
+  characters per section, the latest 40 hints kept, a 2000-character description).
+
+```typescript
+import { hasSongLyrics, hasArrangementOutline, songLyricsInOrder, songLinesSignature } from '@signalsandsorcery/plugin-sdk';
+
+if (hasSongLyrics(host) && hasArrangementOutline(host)) {
+  const song = songLyricsInOrder(await host.getArrangementOutline(), await host.getSongLyrics());
+  for (const { section, lines } of song.filter((s) => s.section.sceneId === mySceneId)) {
+    show(section.label ?? section.sceneName, lines);
+  }
+  await host.setSectionLyrics(instanceId, { lines: newLines, voiceTrackDbId: myVocalTrackDbId });
+  // …after Sing:
+  await host.setSectionLyrics(instanceId, { take: 1, renderedSig: songLinesSignature(newLines) });
+  const off = host.onSongLyricsChanged((doc) => rerender(doc));
+}
+```
+
+The pure rules (`applySongLyricsPatch`, `applySongDescription`, `resolveSectionLines`) and the
+document types are also importable without React from `@signalsandsorcery/plugin-sdk/song-lyrics`.
+The host runs the same rules. For tests, `createSongLyricsTestHost({ outline, ownedTrackDbIds,
+otherTrackOwners })` is an in-memory host with the same behaviour.
+
+### Track Onsets *(since SDK 3.24.0; optional, feature-check with `hasTrackOnsets`)*
+Where another track's hits land, measured from its **audio**: the groove a MIDI read can't see, like the
+backbeat of a drum loop. Read-only and not ownership-gated: any track of the project, by DB id.
+
+| Method | Description |
+|--------|-------------|
+| `readTrackOnsets?(trackDbId, { maxCount? })` | `{ source: 'audio', sampleRate, durationSec, bpm, onsets: [{ timeSec, beat, strength }], truncated }` for one pass of the track's scene loop, as heard; `null` with no project, an unknown track, or nothing to measure |
+| `listSceneAudioTracks?()` | The active scene's sample and audio tracks, `[{ dbId, name, kind: 'sample' \| 'audio', pluginId?, category?, tags?, description? }]`, which `listSceneTracks()` (MIDI tracks only) leaves out. Feature-check with `hasSceneAudioTracks` |
+
+- Time starts at the scene's first downbeat; `beat` is quarter-notes at `bpm`. The host has already
+  applied the clip's offset and stretch, so `beat` lines up with your MIDI.
+- `strength` is relative (0..1, the loudest hit of the reading is 1): it compares hits within one
+  track, not across tracks.
+- Onsets come in time order. Past `maxCount` (default 512, at most `TRACK_ONSETS_LIMITS.maxCount` =
+  4096) the weakest are dropped and `truncated` is `true`. A silent track reads as `onsets: []`.
+- One hit can give more than one onset. Synth kicks, for example, give a secondary onset about
+  0.25 beat after each hit (the body or tail) at a lower strength. Weight onsets by `strength` and
+  merge near-duplicates before you count hits.
+- Readings are cached until the track's sound changes, and a fresh freeze stem is read without a
+  render. Any other uncached read bounces the track. When it can't bounce now, it takes no lock and
+  rejects with `PluginError` `ENGINE_ERROR` and `details: { retryable: true, reason }`. That
+  means busy, not broken. `reason` is a `TrackOnsetsBusyReason` (`TRACK_ONSETS_BUSY_REASONS`):
+  - `'TRANSPORT_PLAYING'`: retry once the transport stops.
+  - `'TRANSITION_RENDER_IN_PROGRESS'`: retry once the other render finishes.
+  Key on `retryable` in general and on `reason` for when to retry. Or go on without that track.
+
+```typescript
+import { hasTrackOnsets, hasSceneAudioTracks } from '@signalsandsorcery/plugin-sdk';
+
+if (hasTrackOnsets(host)) {
+  // Every track in the scene: MIDI tracks, plus loops and audio (a drum loop has no MIDI).
+  const midi = (await host.listSceneTracks?.()) ?? [];
+  const audio = hasSceneAudioTracks(host) ? await host.listSceneAudioTracks() : [];
+  for (const track of [...midi, ...audio]) {
+    const reading = await host.readTrackOnsets(track.dbId);
+    if (!reading) continue;
+    // e.g. how hard each beat of a 4/4 bar is hit
+    const perBeat = [0, 0, 0, 0];
+    for (const o of reading.onsets) perBeat[Math.round(o.beat) % 4] += o.strength;
+  }
+}
+```
+
+Hosts turn a detector's output into the reading with `finishTrackOnsets(raw, opts)`, also importable
+without React from `@signalsandsorcery/plugin-sdk/track-onsets`.
+
 ### Sample Packs *(status methods since SDK 2.7.0; download/progress since 2.8.0)*
 Versioned sample packs (drums, instruments, the loop/sample library) install on demand under `<userData>/samples/`. A plugin checks install state to decide between its normal UI and a "download library" CTA, then drives the download **through the host** — never `window.electronAPI`.
 
@@ -464,6 +556,7 @@ All errors are `PluginError` instances with a typed `code` property:
 - **Ownership scoping** — Plugins can only modify tracks they created (enforced at runtime)
 - **Capability gating** — Network and file system access require manifest declarations
 - **Consent per origin** — `fetchUrlText` reads only links the user allows, per plugin and origin, never from local or private-network addresses
+- **Song lyrics by reading** — a plugin claims a song section only with a vocal track it owns, and can't rewrite a section another plugin's track sings
 - **Secret isolation** — Each plugin's secrets are encrypted and scoped per plugin
 - **Track limits** — 16 tracks per plugin per scene (configurable)
 

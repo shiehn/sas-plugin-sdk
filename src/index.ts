@@ -129,6 +129,19 @@ export type {
   UrlTextFailureReason,
   ArrangementOutline,
   ArrangementOutlineSection,
+  SongLyrics,
+  SongLyricsSection,
+  SongLyricsSectionPatch,
+  SongLyricsSpareVerse,
+  SongLyricsHint,
+  SongLyricsChange,
+  SongLyricsWriteFailure,
+  SongRole,
+  ReadTrackOnsetsOptions,
+  TrackOnset,
+  TrackOnsets,
+  TrackOnsetsBusyReason,
+  SceneAudioTrackSummary,
   PluginHttpRequestOptions,
   PluginHttpResponse,
   PluginCredentialState,
@@ -416,6 +429,40 @@ export {
   describeUrlTextFailure,
 } from './utils/url-text';
 export { hasArrangementOutline, sectionsOfScene, formatSongOrder } from './utils/arrangement-outline';
+
+// Song lyrics (SDK 3.24.0). The pure helpers are also the React-free subpath
+// `@signalsandsorcery/plugin-sdk/song-lyrics` for the host; the test host is root-only.
+export {
+  SONG_LYRICS_VERSION,
+  SONG_ROLE_SUGGESTIONS,
+  SONG_LYRICS_LIMITS,
+  SONG_LYRICS_WRITE_FAILURES,
+  SONG_LYRICS_PATCH_KEYS,
+  hasSongLyrics,
+  emptySongLyrics,
+  emptySongLyricsSection,
+  resolveSectionLines,
+  songLyricsInOrder,
+  songLinesSignature,
+  isSectionTakeStale,
+  applySongLyricsPatch,
+  applySongDescription,
+} from './utils/song-lyrics';
+export type { SongLyricsInOrder, SongLyricsWriteContext, SongLyricsWriteResult } from './utils/song-lyrics';
+export { createSongLyricsTestHost } from './utils/song-lyrics-test-host';
+export type { SongLyricsTestHost, SongLyricsTestHostOptions } from './utils/song-lyrics-test-host';
+
+// Track onsets (SDK 3.24.0). Also the React-free subpath
+// `@signalsandsorcery/plugin-sdk/track-onsets` for the host.
+export {
+  TRACK_ONSETS_LIMITS,
+  TRACK_ONSETS_BUSY_REASONS,
+  hasTrackOnsets,
+  hasSceneAudioTracks,
+  resolveTrackOnsetsMaxCount,
+  finishTrackOnsets,
+} from './utils/track-onsets';
+export type { RawTrackOnsets } from './utils/track-onsets';
 export {
   formatMusicalContext,
   type FormatMusicalContextOptions,
